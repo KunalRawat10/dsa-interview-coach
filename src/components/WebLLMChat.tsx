@@ -42,7 +42,7 @@ export default function WebLLMChat({ onStatusChange }: WebLLMChatProps) {
     const initEngine = async () => {
       try {
         onStatusChange?.('Initializing AI engine...')
-
+        
         const engine = await webllm.CreateMLCEngine(
           'Qwen2.5-1.5B-Instruct-q4f32_1-MLC',
           {
@@ -57,7 +57,6 @@ export default function WebLLMChat({ onStatusChange }: WebLLMChatProps) {
         )
 
         if (cancelled) {
-          engine.dispose()
           return
         }
 
@@ -75,7 +74,7 @@ export default function WebLLMChat({ onStatusChange }: WebLLMChatProps) {
 
     return () => {
       cancelled = true
-      engineRef.current?.dispose()
+      // No dispose method available, engine cleans up on page unload
     }
   }, [onStatusChange])
 
