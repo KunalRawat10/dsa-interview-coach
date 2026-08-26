@@ -1,7 +1,7 @@
 /* eslint-disable react/no-unknown-property */
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { forwardRef, useRef, useMemo, useLayoutEffect, useEffect } from 'react'
-import { Color, Mesh, ShaderMaterial } from 'three'
+import { Color, Mesh, ShaderMaterial, type IUniform } from 'three'
 
 const hexToNormalizedRGB = (hex: string): [number, number, number] => {
     hex = hex.replace('#', '')
@@ -70,6 +70,7 @@ void main() {
 `
 
 interface SilkUniforms {
+    [key: string]: IUniform<unknown>
     uSpeed: { value: number }
     uScale: { value: number }
     uNoiseIntensity: { value: number }

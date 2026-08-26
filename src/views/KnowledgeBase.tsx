@@ -28,7 +28,7 @@ export default function KnowledgeBase({ onNavigate }: KnowledgeBaseProps) {
             const saved: NoteChunk[] = []
             for (let i = 0; i < pieces.length; i++) {
                 setStatus(`Embedding chunk ${i + 1} of ${pieces.length}...`)
-                const embedding = await embedText(pieces[i], (pct) =>
+                const embedding = await embedText(pieces[i], (pct: number) =>
                     setStatus(`Loading embedding model (one-time, ~25MB)... ${pct}%`)
                 )
                 saved.push({
