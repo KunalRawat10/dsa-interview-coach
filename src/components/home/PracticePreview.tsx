@@ -1,13 +1,8 @@
 import { useState } from 'react'
 import { motion } from 'motion/react'
-import type { TabId } from '../../App'
-import { ArrowRight, Play, CheckCircle2, FileCode, Sparkles } from 'lucide-react'
+import { Play, CheckCircle2, FileCode, Sparkles } from 'lucide-react'
 
-interface PracticePreviewProps {
-  onNavigate: (tab: TabId) => void
-}
-
-export default function PracticePreview({ onNavigate }: PracticePreviewProps) {
+export default function PracticePreview() {
   const [isRunning, setIsRunning] = useState(false)
   const [hasRun, setHasRun] = useState(false)
 

@@ -1,12 +1,7 @@
 import { motion } from 'motion/react'
-import type { TabId } from '../../App'
 import { Activity } from 'lucide-react'
 
-interface ComplexityPreviewProps {
-  onNavigate?: (tab: TabId) => void
-}
-
-export default function ComplexityPreview({ onNavigate }: ComplexityPreviewProps) {
+export default function ComplexityPreview() {
   return (
     <section className="py-24 sm:py-32 relative border-t border-[#1C2029]">
       {/* Centered Heading & Subtext */}

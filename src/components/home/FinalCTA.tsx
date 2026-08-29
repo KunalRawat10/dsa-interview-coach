@@ -1,7 +1,6 @@
 import { motion } from 'motion/react'
 import type { TabId } from '../../App'
 import { ArrowRight } from 'lucide-react'
-import logoImg from 'C:/Users/kunal/.gemini/antigravity/brain/23d899d7-8205-491a-8369-97eddc3f7749/.user_uploaded/media_1787822121325.png'
 
 interface FinalCTAProps {
   onNavigate: (tab: TabId) => void
@@ -77,13 +76,12 @@ export default function FinalCTA({ onNavigate }: FinalCTAProps) {
               type="button"
               onClick={handleScrollTop}
               aria-label="PatternOS home"
-              className="flex items-center cursor-pointer group select-none transition-opacity hover:opacity-90 active:opacity-80 p-0 bg-transparent border-0 text-left"
+              className="flex items-center gap-2.5 cursor-pointer group select-none transition-opacity hover:opacity-90 active:opacity-80 p-0 bg-transparent border-0 text-left"
             >
-              <img
-                src={logoImg}
-                alt="PatternOS"
-                className="h-6 sm:h-7 w-auto object-contain block max-w-[140px]"
-              />
+              <Logo />
+              <span className="font-display text-lg sm:text-xl font-bold tracking-tight text-[#F2F1EC]">
+                PatternOS
+              </span>
             </button>
             <p className="text-xs text-[#5C6370] max-w-xs leading-relaxed">
               Think in patterns, not solutions. A platform for building algorithmic intuition.
@@ -172,3 +170,18 @@ export default function FinalCTA({ onNavigate }: FinalCTAProps) {
     </div>
   )
 }
+
+function Logo() {
+  return (
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" className="shrink-0">
+      <rect width="28" height="28" rx="7" fill="#111317" stroke="#2C313A" strokeWidth="1" />
+      <circle cx="9" cy="9" r="2.5" fill="#4B8FE7" />
+      <circle cx="19" cy="9" r="2.5" fill="#2E72D0" />
+      <circle cx="14" cy="19" r="2.5" fill="#C9A961" />
+      <line x1="9" y1="9" x2="19" y2="9" stroke="#2C313A" strokeWidth="1.5" />
+      <line x1="9" y1="9" x2="14" y2="19" stroke="#2C313A" strokeWidth="1.5" />
+      <line x1="19" y1="9" x2="14" y2="19" stroke="#2C313A" strokeWidth="1.5" />
+    </svg>
+  )
+}
+

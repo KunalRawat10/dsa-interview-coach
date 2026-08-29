@@ -4,6 +4,16 @@ interface FooterProps {
   onNavigate: (tab: TabId) => void
 }
 
+interface FooterLink {
+  label: string
+  tab?: TabId
+}
+
+interface FooterColumn {
+  title: string
+  links: FooterLink[]
+}
+
 export default function Footer({ onNavigate }: FooterProps) {
   const handleScrollTop = () => {
     window.scrollTo({
@@ -12,7 +22,7 @@ export default function Footer({ onNavigate }: FooterProps) {
     })
   }
 
-  const columns = [
+  const columns: FooterColumn[] = [
     {
       title: 'Product',
       links: [
@@ -77,7 +87,7 @@ export default function Footer({ onNavigate }: FooterProps) {
                   <li key={link.label}>
                     {link.tab ? (
                       <button
-                        onClick={() => onNavigate(link.tab)}
+                        onClick={() => onNavigate(link.tab!)}
                         className="text-xs sm:text-sm text-paper-400 transition-colors hover:text-paper-100 cursor-pointer"
                       >
                         {link.label}
