@@ -191,6 +191,21 @@ export function deleteSession(id: string): ChatSession[] {
   return updated
 }
 
+export function clearHistory(): ChatSession[] {
+  const previousLength = loadHistory().length
+  try {
+    localStorage.removeItem(HISTORY_KEY)
+  } catch {
+    // ignore
+  }
+  console.log('[HISTORY CLEAR]', {
+    previousCount: previousLength,
+    newCount: 0,
+    timestamp: Date.now(),
+  })
+  return []
+}
+
 export function saveActiveSession(state: ActiveChatState): void {
   try {
     localStorage.setItem(ACTIVE_CHAT_KEY, JSON.stringify(state))

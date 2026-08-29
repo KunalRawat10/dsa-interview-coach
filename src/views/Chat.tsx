@@ -73,11 +73,10 @@ export default function Chat() {
         attemptedIds={attemptedIds}
       />
 
-      {/* Chat Interface — min-h-[420px] gives the chamber workspace presence
-          on large screens without reintroducing the flex-fill dead-air problem.
-          The card grows naturally as conversation deepens.
+      {/* Chat Interface — naturally sizes to the conversation content without
+          artificial empty space below the input, while growing as conversation deepens.
           No backdrop-filter. bg-surface/75 is plain alpha compositing. */}
-      <div className="rounded-xl border border-border-subtle bg-surface/75 shadow-xl shadow-black/40 p-5 min-h-[420px]">
+      <div className="rounded-xl border border-border-subtle bg-surface/75 shadow-xl shadow-black/40 p-5">
         <WebLLMChat
           onStatusChange={setStatus}
           problem={activeProblem}

@@ -7,6 +7,7 @@ import {
   loadHistory,
   persistActiveSession,
   deleteSession,
+  clearHistory,
   saveActiveSession,
   loadActiveSession,
   createSessionId,
@@ -24,44 +25,68 @@ type Mode = 'lite' | 'loading' | 'ai'
 
 // Builds a system prompt that includes the active problem's context.
 // The AI knows the intended pattern internally but must NOT reveal it —
-// it guides the learner Socratically through Observe → Structure → Pattern → Invariant → Implementation.
-function buildSystemPrompt(problem: Problem | undefined): string {
-  const base = `You are a DSA interview coach for PatternOS. Guide learners to RECOGNIZE algorithmic patterns through Socratic questioning — never give direct solutions.
+// it must guide the user Socratically through hints, invariants, and questions.
+function buildSystemPrompt(problem?: Problem): string {
+  if (!problem) {
+    return `You are a world-class DSA interview coach using the Socratic method.
+Guide the user to discover data structure and algorithmic patterns on their own.
+Rules:
+- NEVER write complete solutions or code unless the user explicitly asks for code review after attempting it.
+- Ask one focused question at a time to build intuition.
+- Help them identify problem structure: inputs, constraints, invariants, patterns.
+- If they are stuck, give the gentlest possible hint.
+- Validate good thinking and gently probe flawed assumptions.
+- Keep responses concise (2-4 sentences max per turn).`
+  }
 
-RULES:
-1. NEVER reveal the solution pattern name directly. Let the learner discover it.
-2. Ask ONE focused Socratic question at a time.
-3. Guide through: Observe → Structure → Pattern → Invariant → Implementation → Complexity.
-4. If the user pastes code, analyze its complexity and ask what could be improved — do NOT fix it for them.
-5. Be encouraging but firm — redirect direct solution requests with a targeted hint.
-6. Keep responses to 2–4 sentences.
-7. Refer to patterns by name (Two Pointers, Sliding Window, etc.) only AFTER the learner identifies them first.`
+  return `You are a world-class DSA interview coach using the Socratic method.
+You are coaching the user on the problem "${problem.title}" (${problem.difficulty}).
 
-  if (!problem) return base
+INTERNAL PEDAGOGICAL CONTEXT (DO NOT REVEAL DIRECTLY TO THE USER):
+- Intended Pattern: ${problem.pattern}
+- Key Observation: ${problem.observation}
+- Structural Clue: ${problem.structuralClue}
+- Invariant: ${problem.invariant}
+- Progressive Hints:
+${problem.hints.map((h, i) => `  ${i + 1}. ${h}`).join('\n')}
+- Target Complexities: Time ${problem.expectedTime}, Space ${problem.expectedSpace}
 
-  return `${base}
-
-ACTIVE PROBLEM: "${problem.title}" (${problem.difficulty})
-TARGET PATTERN: ${problem.pattern} — DO NOT reveal this name directly. Guide the learner to discover it.
-KEY OBSERVATION TO LEAD TOWARD: ${problem.observation}
-STRUCTURAL CLUE: ${problem.structuralClue}
-CORE INVARIANT: ${problem.invariant}
-EXPECTED COMPLEXITY: Time ${problem.expectedTime}, Space ${problem.expectedSpace}
-
-PROGRESSIVE HINTS — use sparingly, in order, only when the learner is stuck:
-${problem.hints.map((h, i) => `  ${i + 1}. "${h}"`).join('\n')}`
+COACHING RULES:
+1. NEVER reveal the pattern name, algorithm name, or solution directly.
+2. Guide them toward the Key Observation and Invariant through questions.
+3. Draw from the Progressive Hints in order if they are stuck.
+4. Keep each response concise (2-4 sentences max). Ask one clear question at a time.
+5. If they propose a brute-force approach, ask them about its complexity and where work is wasted.
+6. Validate correct intuition and encourage them.`
 }
 
-// Welcome message seeded with the problem context.
+// Builds the initial welcome message seeded with the problem context
 function buildProblemWelcome(problem: Problem): Message {
+  const exampleText = problem.examples
+    .slice(0, 2)
+    .map((e, i) => `Example ${i + 1}: ${e.input} → ${e.output}${e.note ? ` (${e.note})` : ''}`)
+    .join('\n')
+
   return {
     role: 'assistant',
-    content: `Let's work through ${problem.title} together.\n\n${problem.description}\n\nBefore writing any code — what do you notice about this problem? What information are you given, and what are you trying to find?`,
+    content: `**${problem.title}** (${problem.difficulty} · ${problem.category})
+
+${problem.description}
+
+\`\`\`
+${exampleText}
+\`\`\`
+
+Constraints: ${problem.constraints.join(', ')}
+
+---
+Where would you like to start? What stands out about the inputs or what the problem is asking for?`,
   }
 }
 
 function isLowPowerDevice(): boolean {
-  const nav = navigator as Navigator & { deviceMemory?: number }
+  if (typeof navigator === 'undefined') return false
+  const nav = navigator as Navigator & { deviceMemory?: number; hardwareConcurrency?: number }
   const cores = nav.hardwareConcurrency ?? 4
   const mem = nav.deviceMemory ?? 4
   return cores < 4 || mem < 4
@@ -121,6 +146,7 @@ interface ChatInputBarProps {
   activeSessionId: string
   onLoadSession: (session: ChatSession) => void
   onRemoveSession: (id: string) => void
+  onClearAllHistory: () => void
   onClearChat: () => void
 }
 
@@ -132,10 +158,12 @@ const ChatInputBar = memo(function ChatInputBar({
   activeSessionId,
   onLoadSession,
   onRemoveSession,
+  onClearAllHistory,
   onClearChat,
 }: ChatInputBarProps) {
   const [input, setInput] = useState('')
   const [showHistory, setShowHistory] = useState(false)
+  const [showConfirmClear, setShowConfirmClear] = useState(false)
 
   const handleSend = () => {
     const trimmed = input.trim()
@@ -152,7 +180,7 @@ const ChatInputBar = memo(function ChatInputBar({
   }
 
   return (
-    <div className="mt-4 pt-4 border-t border-border-subtle relative isolate">
+    <div className="mt-4 pt-3 border-t border-border-subtle relative isolate">
       <div className="flex gap-2">
         <input
           type="text"
@@ -170,17 +198,34 @@ const ChatInputBar = memo(function ChatInputBar({
           Send
         </button>
       </div>
-      <div className="flex justify-between items-center mt-2 text-[10px] text-text-muted">
+      <div className="flex justify-between items-center mt-2 text-[10px] text-text-muted flex-wrap gap-2">
         <span>Press Enter to send</span>
-        <div className="flex items-center gap-3 relative">
+        <div className="flex items-center gap-3 relative flex-wrap">
           <button
-            onClick={() => setShowHistory((v) => !v)}
+            onClick={() => {
+              setShowHistory((v) => !v)
+              setShowConfirmClear(false)
+            }}
             className="text-text-muted hover:text-accent transition-colors"
           >
             History{history.length > 0 ? ` (${history.length})` : ''}
           </button>
+          {history.length > 0 && (
+            <button
+              onClick={() => {
+                setShowConfirmClear((v) => !v)
+                setShowHistory(false)
+              }}
+              className="text-text-muted hover:text-danger transition-colors"
+            >
+              Clear History
+            </button>
+          )}
           <button
-            onClick={onClearChat}
+            onClick={() => {
+              setShowConfirmClear(false)
+              onClearChat()
+            }}
             className="text-text-muted hover:text-danger transition-colors"
           >
             Reset chat
@@ -190,6 +235,37 @@ const ChatInputBar = memo(function ChatInputBar({
               ? 'Full local AI — no data leaves your browser'
               : 'Lite Mode — instant, no download'}
           </span>
+
+          {showConfirmClear && (
+            <div
+              className="absolute bottom-full right-0 mb-2 w-72 sm:w-80 rounded-xl border border-ink-600 shadow-2xl shadow-black/95 p-3.5 text-left z-50 isolate"
+              style={{ backgroundColor: '#0A0B0E', opacity: 1 }}
+            >
+              <div className="text-xs font-medium text-paper-100 mb-1">
+                Clear all chat history?
+              </div>
+              <div className="text-[11px] text-paper-400 leading-relaxed mb-3">
+                This will permanently remove all saved Practice conversations.
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  onClick={() => setShowConfirmClear(false)}
+                  className="px-2.5 py-1 text-xs text-paper-300 hover:text-paper-100 transition-colors rounded-md"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    onClearAllHistory()
+                    setShowConfirmClear(false)
+                  }}
+                  className="px-2.5 py-1 text-xs font-medium text-white bg-danger/80 hover:bg-danger rounded-md transition-colors shadow-sm"
+                >
+                  Clear History
+                </button>
+              </div>
+            </div>
+          )}
 
           {showHistory && (
             <div
@@ -575,14 +651,14 @@ export default function WebLLMChat({
     setTimeout(() => setSolvedConfirmed(false), 3000)
   }, [handleSolvedClick])
 
-
-
+  const handleClearAllHistory = useCallback(() => {
+    const updated = clearHistory()
+    setHistory(updated)
+  }, [])
 
   return (
-    // No h-full — WebLLMChat sizes to content inside its p-5 card.
-    // The messages area uses max-h so there is no dead vertical space
-    // when only 2-3 messages exist, and it becomes scrollable as the
-    // conversation grows.
+    // WebLLMChat sizes naturally to content inside the chamber card.
+    // The messages area grows as the conversation deepens and becomes scrollable.
     <div className="flex flex-col">
       {/* Mode banner */}
       {mode === 'lite' && (
@@ -609,10 +685,9 @@ export default function WebLLMChat({
         </div>
       )}
 
-      {/* Messages — max-h keeps the area proportional to the conversation;
-          no flex-1 here so a short conversation doesn't leave empty air.
-          Becomes scrollable as messages accumulate. */}
-      <div className="overflow-y-auto space-y-4 pr-2 transform-gpu overscroll-y-contain max-h-[calc(100vh-420px)] min-h-[120px]">
+      {/* Messages — naturally sizes without artificial empty dead air.
+          Scrollable as messages accumulate. */}
+      <div className="overflow-y-auto space-y-4 pr-2 transform-gpu overscroll-y-contain max-h-[calc(100vh-340px)] min-h-[60px]">
         {messages.map((msg, i) => (
           <MessageBubble key={i} msg={msg} />
         ))}
@@ -668,6 +743,7 @@ export default function WebLLMChat({
         activeSessionId={sessionId}
         onLoadSession={loadSession}
         onRemoveSession={removeHistorySession}
+        onClearAllHistory={handleClearAllHistory}
         onClearChat={clearChat}
       />
     </div>
