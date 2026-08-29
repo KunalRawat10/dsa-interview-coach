@@ -11,6 +11,7 @@ import {
   loadActiveSession,
   createSessionId,
   type ChatSession,
+  type ActiveChatState,
 } from '../lib/chatHistory'
 import { PROBLEMS, type Problem } from '../data/problems'
 
