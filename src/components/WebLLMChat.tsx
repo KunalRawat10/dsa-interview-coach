@@ -121,6 +121,127 @@ function initChatState(initialProblem?: Problem): { sessionId: string; messages:
   }
 }
 
+// ─── Lightweight Markdown Renderer ────────────────────────────────────────────
+// Handles: **bold**, *italic*, `inline code`, fenced code blocks, ---, paragraphs.
+// No external deps. Designed to match the existing dark UI.
+
+function renderInline(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = []
+  // Matches: **bold** or __bold__, *italic* or _italic_, `code`
+  const re = /(\*\*(.+?)\*\*|__(.+?)__|`([^`]+)`|\*([^*]+)\*|_([^_]+)_)/g
+  let last = 0
+  let m: RegExpExecArray | null
+  let key = 0
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) {
+      parts.push(text.slice(last, m.index))
+    }
+    if (m[2] !== undefined || m[3] !== undefined) {
+      const boldText = m[2] ?? m[3]
+      parts.push(<strong key={key++} className="font-semibold text-text-primary">{boldText}</strong>)
+    } else if (m[4] !== undefined) {
+      parts.push(
+        <code
+          key={key++}
+          className="font-mono text-[0.82em] bg-white/8 text-accent px-1.5 py-0.5 rounded border border-white/5"
+        >
+          {m[4]}
+        </code>
+      )
+    } else if (m[5] !== undefined || m[6] !== undefined) {
+      const italicText = m[5] ?? m[6]
+      parts.push(<em key={key++} className="italic text-text-secondary">{italicText}</em>)
+    }
+    last = m.index + m[0].length
+  }
+  if (last < text.length) parts.push(text.slice(last))
+  return parts
+}
+
+const MarkdownContent = memo(function MarkdownContent({ content }: { content: string }) {
+  const nodes: React.ReactNode[] = []
+  const lines = content.split('\n')
+  let i = 0
+  let blockKey = 0
+
+  while (i < lines.length) {
+    const line = lines[i]
+
+    // Fenced code block
+    if (line.trimStart().startsWith('```')) {
+      const fenceLines: string[] = []
+      i++
+      while (i < lines.length && !lines[i].trimStart().startsWith('```')) {
+        fenceLines.push(lines[i])
+        i++
+      }
+      i++ // consume closing fence
+      nodes.push(
+        <pre
+          key={blockKey++}
+          className="my-2 overflow-x-auto rounded-lg bg-ink-900 border border-ink-700 px-3 py-2.5 font-mono text-[0.8em] text-paper-200 leading-relaxed whitespace-pre"
+        >
+          {fenceLines.join('\n')}
+        </pre>
+      )
+      continue
+    }
+
+    // Horizontal rule
+    if (/^---+$/.test(line.trim())) {
+      nodes.push(<hr key={blockKey++} className="my-2 border-t border-border-subtle" />)
+      i++
+      continue
+    }
+
+    // Empty line — paragraph break
+    if (line.trim() === '') {
+      i++
+      continue
+    }
+
+    // Bulleted list item (- item or * item)
+    const bulletMatch = line.match(/^(\s*)[-*]\s+(.*)$/)
+    if (bulletMatch) {
+      nodes.push(
+        <div key={blockKey++} className="my-1 flex items-start gap-2 pl-2">
+          <span className="text-accent shrink-0 select-none leading-relaxed">•</span>
+          <span className="leading-relaxed">{renderInline(bulletMatch[2])}</span>
+        </div>
+      )
+      i++
+      continue
+    }
+
+    // Numbered list item (1. item)
+    const orderedMatch = line.match(/^(\s*)(\d+)\.\s+(.*)$/)
+    if (orderedMatch) {
+      nodes.push(
+        <div key={blockKey++} className="my-1 flex items-start gap-2 pl-2">
+          <span className="font-mono text-xs text-text-muted shrink-0 select-none leading-relaxed">
+            {orderedMatch[2]}.
+          </span>
+          <span className="leading-relaxed">{renderInline(orderedMatch[3])}</span>
+        </div>
+      )
+      i++
+      continue
+    }
+
+    // Regular paragraph line (with inline formatting)
+    nodes.push(
+      <p key={blockKey++} className="my-1 leading-relaxed">
+        {renderInline(line)}
+      </p>
+    )
+    i++
+  }
+
+  return <div className="space-y-0.5">{nodes}</div>
+})
+
+// ─── Message Bubble ────────────────────────────────────────────────────────────
+
 const MessageBubble = memo(function MessageBubble({ msg }: { msg: Message }) {
   const isUser = msg.role === 'user'
   return (
@@ -132,11 +253,114 @@ const MessageBubble = memo(function MessageBubble({ msg }: { msg: Message }) {
             : 'bg-surface-raised border border-border-subtle text-text-secondary rounded-bl-md'
         }`}
       >
-        {msg.content}
+        {isUser ? (
+          // User messages: plain text (they may contain newlines from the textarea)
+          <span className="whitespace-pre-wrap">{msg.content}</span>
+        ) : (
+          // Assistant messages: render Markdown
+          <MarkdownContent content={msg.content} />
+        )}
       </div>
     </div>
   )
 })
+
+// ─── Hint Strip ───────────────────────────────────────────────────────────────
+// Deterministic, no AI, no session writes, no chat messages.
+
+interface HintStripProps {
+  hints: string[]
+  hintIndex: number          // which hint to show (-1 = none shown yet)
+  onRevealNextHint: () => void
+}
+
+const HintStrip = memo(function HintStrip({ hints, hintIndex, onRevealNextHint }: HintStripProps) {
+  const total = hints.length
+  const allRevealed = hintIndex >= total - 1 && hintIndex >= 0
+  const noneRevealed = hintIndex < 0
+
+  return (
+    <div className="mt-3 rounded-lg border border-border-subtle bg-surface-raised px-3 py-2.5 text-xs">
+      {noneRevealed ? (
+        // Initial state: just a Hint button
+        <div className="flex items-center justify-between">
+          <span className="text-text-muted">Stuck? Use a hint.</span>
+          <button
+            onClick={onRevealNextHint}
+            className="rounded-md bg-accent/10 px-3 py-1 text-xs font-medium text-accent hover:bg-accent/20 transition-colors"
+          >
+            Hint
+          </button>
+        </div>
+      ) : (
+        // Hint revealed
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[10px] text-text-muted uppercase tracking-wide">
+              Hint {hintIndex + 1} of {total}
+            </span>
+            {!allRevealed && (
+              <button
+                onClick={onRevealNextHint}
+                className="rounded-md bg-accent/10 px-2.5 py-1 text-[10px] font-medium text-accent hover:bg-accent/20 transition-colors"
+              >
+                Next hint
+              </button>
+            )}
+            {allRevealed && (
+              <span className="font-mono text-[10px] text-text-muted">All hints revealed</span>
+            )}
+          </div>
+          <p className="text-text-secondary leading-relaxed">{hints[hintIndex]}</p>
+        </div>
+      )}
+    </div>
+  )
+})
+
+// ─── Conversation Starters ────────────────────────────────────────────────────
+// Shown only when messages.length === 1 (only the welcome assistant message).
+// "Give me a hint" triggers the hint system instead of sending a message.
+
+interface ConversationStartersProps {
+  onSendMessage: (text: string) => void
+  onRevealHint: () => void
+  disabled: boolean
+}
+
+const ConversationStarters = memo(function ConversationStarters({
+  onSendMessage,
+  onRevealHint,
+  disabled,
+}: ConversationStartersProps) {
+  return (
+    <div className="flex flex-wrap gap-2 mt-3">
+      <button
+        onClick={() => onSendMessage("What should I think about?")}
+        disabled={disabled}
+        className="rounded-lg border border-border-subtle bg-surface-raised px-3 py-2 text-xs text-text-secondary hover:border-border-hover hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        What should I think about?
+      </button>
+      <button
+        onClick={onRevealHint}
+        disabled={disabled}
+        className="rounded-lg border border-border-subtle bg-surface-raised px-3 py-2 text-xs text-text-secondary hover:border-border-hover hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        Give me a hint
+      </button>
+      <button
+        onClick={() => onSendMessage("I'll explain my approach")}
+        disabled={disabled}
+        className="rounded-lg border border-border-subtle bg-surface-raised px-3 py-2 text-xs text-text-secondary hover:border-border-hover hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        I'll explain my approach
+      </button>
+    </div>
+  )
+})
+
+// ─── Chat Input Bar ────────────────────────────────────────────────────────────
 
 interface ChatInputBarProps {
   onSend: (text: string) => void
@@ -164,42 +388,58 @@ const ChatInputBar = memo(function ChatInputBar({
   const [input, setInput] = useState('')
   const [showHistory, setShowHistory] = useState(false)
   const [showConfirmClear, setShowConfirmClear] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Auto-grow textarea
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 160) + 'px'
+  }, [input])
 
   const handleSend = () => {
     const trimmed = input.trim()
     if (!trimmed || disabled) return
     onSend(trimmed)
     setInput('')
+    // Reset height after send
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+    }
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
     }
+    // Shift+Enter: default textarea behavior inserts newline — no special handling needed
   }
 
   return (
     <div className="mt-4 pt-3 border-t border-border-subtle relative isolate">
-      <div className="flex gap-2">
-        <input
-          type="text"
+      <div className="flex gap-2 items-end">
+        <textarea
+          ref={textareaRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask about this problem or paste your code..."
-          className="flex-1 bg-surface-raised border border-border-subtle rounded-xl px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors"
+          placeholder="Ask about this problem or paste your code…"
+          rows={1}
+          className="flex-1 bg-surface-raised border border-border-subtle rounded-xl px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors resize-none overflow-y-auto leading-relaxed"
+          style={{ maxHeight: '160px' }}
         />
         <button
           onClick={handleSend}
           disabled={!input.trim() || disabled}
-          className="px-5 py-3 bg-accent text-white rounded-xl text-sm font-medium hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+          className="px-5 py-3 bg-accent text-white rounded-xl text-sm font-medium hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0"
         >
           Send
         </button>
       </div>
       <div className="flex justify-between items-center mt-2 text-[10px] text-text-muted flex-wrap gap-2">
-        <span>Press Enter to send</span>
+        <span>Enter to send · Shift+Enter for new line</span>
         <div className="flex items-center gap-3 relative flex-wrap">
           <button
             onClick={() => {
@@ -355,6 +595,8 @@ const ChatInputBar = memo(function ChatInputBar({
   )
 })
 
+// ─── WebLLMChat ────────────────────────────────────────────────────────────────
+
 interface WebLLMChatProps {
   onStatusChange?: (status: string) => void
   problem?: Problem
@@ -379,6 +621,11 @@ export default function WebLLMChat({
   const [lowPowerWarning] = useState(isLowPowerDevice)
   const [history, setHistory] = useState<ChatSession[]>(loadHistory)
   const [solvedConfirmed, setSolvedConfirmed] = useState(false)
+
+  // ── Hint state: index of the last revealed hint (-1 = none revealed yet)
+  // Pure UI state — no session writes, no AI calls, no chat messages.
+  const [hintIndex, setHintIndex] = useState(-1)
+
   const engineRef = useRef<MLCEngine | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const isInitialMount = useRef(true)
@@ -437,6 +684,8 @@ export default function WebLLMChat({
       problemId: problem.id,
       messages: [welcome],
     })
+    // Reset hint state for the new problem
+    setHintIndex(-1)
   }, [userSelectionToken, problem, setActiveSessionId])
 
   useEffect(() => {
@@ -591,6 +840,8 @@ export default function WebLLMChat({
       problemId: problemRef.current?.id,
       messages: [resetMsg],
     })
+    // Reset hint state on fresh start
+    setHintIndex(-1)
   }, [setActiveSessionId])
 
   const loadSession = useCallback((session: ChatSession) => {
@@ -607,6 +858,8 @@ export default function WebLLMChat({
     setSessionId(restoredId)
     messagesRef.current = session.messages
     setMessages(session.messages)
+    // Reset hint display when loading a historical session — do not inject into restored messages
+    setHintIndex(-1)
 
     // If the restored session belongs to a different problem, sync ProblemSelector display only
     if (session.problemId && onHistorySyncProblem) {
@@ -656,6 +909,19 @@ export default function WebLLMChat({
     setHistory(updated)
   }, [])
 
+  // ── Derived state ────────────────────────────────────────────────────────────
+
+  // Fresh session: only the initial welcome assistant message, no user messages yet
+  const isFreshSession = messages.length === 1 && messages[0].role === 'assistant'
+
+  // Current problem's hints (empty array if no problem or no hints)
+  const currentHints = problem?.hints ?? []
+
+  // Reveal the next hint (pure UI state — no AI, no session writes)
+  const revealNextHint = useCallback(() => {
+    setHintIndex((idx) => Math.min(idx + 1, currentHints.length - 1))
+  }, [currentHints.length])
+
   return (
     // WebLLMChat sizes naturally to content inside the chamber card.
     // The messages area grows as the conversation deepens and becomes scrollable.
@@ -691,6 +957,24 @@ export default function WebLLMChat({
         {messages.map((msg, i) => (
           <MessageBubble key={i} msg={msg} />
         ))}
+
+        {/* Socratic coach note — shown only on a fresh session, after the welcome message */}
+        {isFreshSession && (
+          <div className="flex justify-start">
+            <p className="text-[11px] text-text-muted italic px-1">
+              I'll guide you with questions and hints rather than immediately giving you the answer.
+            </p>
+          </div>
+        )}
+
+        {/* Conversation starters — shown only on fresh session */}
+        {isFreshSession && (
+          <ConversationStarters
+            onSendMessage={sendMessage}
+            onRevealHint={revealNextHint}
+            disabled={isThinking}
+          />
+        )}
 
         {isThinking && (
           <div className="flex justify-start">
@@ -733,6 +1017,15 @@ export default function WebLLMChat({
 
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Hint strip — below the message area, above the input. Always visible when a problem is loaded. */}
+      {currentHints.length > 0 && (
+        <HintStrip
+          hints={currentHints}
+          hintIndex={hintIndex}
+          onRevealNextHint={revealNextHint}
+        />
+      )}
 
       {/* Input */}
       <ChatInputBar

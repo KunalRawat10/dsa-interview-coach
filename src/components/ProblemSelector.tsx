@@ -37,8 +37,9 @@ export const ProblemSelector = memo(function ProblemSelector({
         <button
           onClick={() => prevProblem && onSelect(prevProblem)}
           disabled={!prevProblem}
+          aria-label="Previous problem"
           title="Previous problem"
-          className="shrink-0 text-text-muted hover:text-accent disabled:opacity-25 disabled:cursor-not-allowed transition-colors p-1"
+          className="shrink-0 text-text-muted hover:text-accent disabled:opacity-25 disabled:cursor-not-allowed transition-colors p-3 rounded-lg"
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path d="M9 11L5 7l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -94,8 +95,9 @@ export const ProblemSelector = memo(function ProblemSelector({
         <button
           onClick={() => nextProblem && onSelect(nextProblem)}
           disabled={!nextProblem}
+          aria-label="Next problem"
           title="Next problem"
-          className="shrink-0 text-text-muted hover:text-accent disabled:opacity-25 disabled:cursor-not-allowed transition-colors p-1"
+          className="shrink-0 text-text-muted hover:text-accent disabled:opacity-25 disabled:cursor-not-allowed transition-colors p-3 rounded-lg"
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path d="M5 11l4-4-4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
