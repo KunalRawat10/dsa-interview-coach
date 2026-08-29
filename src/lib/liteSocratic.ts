@@ -1,6 +1,10 @@
 // Zero-download, instant Socratic engine. Pattern-matches the user's message
 // against DSA topic keywords and returns a guiding question — no model needed.
 // This is what every visitor gets by default; WebLLM is opt-in on top of it.
+//
+// liteRespond accepts an optional patternTag (from the active Problem) so when
+// a problem is selected the hints are contextually correct without requiring
+// the user to type pattern keywords first.
 
 type Category =
   | 'array'
@@ -56,6 +60,30 @@ const BANK: Record<Category, string[]> = {
   ],
 }
 
+// Maps PatternTag values (from problems.ts) directly to BANK categories.
+// Kept here to avoid a circular import; patterns not listed fall back to keyword detection.
+const TAG_TO_CATEGORY: Record<string, Category> = {
+  'hash-set': 'hashmap',
+  'hash-map': 'hashmap',
+  'frequency-map': 'hashmap',
+  'stack': 'array',
+  'running-min': 'array',
+  'binary-search': 'array',
+  'sliding-window': 'slidingWindow',
+  'kadane': 'array',
+  'prefix-suffix': 'array',
+  'sorting-intervals': 'array',
+  'sorting-two-pointers': 'twoPointer',
+  'two-pointers': 'twoPointer',
+  'monotonic-stack': 'array',
+  'bfs-dfs': 'graph',
+  'heap-bucket': 'array',
+  'graph-traversal': 'graph',
+  'topological-sort': 'graph',
+  'tree-recursion': 'graph',
+  'dynamic-programming': 'dp',
+}
+
 const KEYWORDS: Array<[Category, RegExp]> = [
   ['code', /function\s|def\s|=>|{[\s\S]*}/],
   ['hashmap', /hash\s?map|dictionary|frequency|complement|seen before/i],
@@ -70,14 +98,29 @@ const KEYWORDS: Array<[Category, RegExp]> = [
 // back-to-back within a session.
 const cursor: Partial<Record<Category, number>> = {}
 
-export function liteRespond(userText: string): string {
+// patternTag: optional — when a Problem is active, pass problem.patternTag so
+// Lite Mode returns hints relevant to the selected problem instead of guessing
+// from keyword matching alone.
+export function liteRespond(userText: string, patternTag?: string): string {
   let category: Category = 'generic'
-  for (const [cat, re] of KEYWORDS) {
-    if (re.test(userText)) {
-      category = cat
-      break
+
+  if (patternTag) {
+    const mapped = TAG_TO_CATEGORY[patternTag]
+    if (mapped) {
+      category = mapped
     }
   }
+
+  // If no tag was resolved, fall through to keyword detection on the user's text.
+  if (category === 'generic') {
+    for (const [cat, re] of KEYWORDS) {
+      if (re.test(userText)) {
+        category = cat
+        break
+      }
+    }
+  }
+
   const bank = BANK[category]
   const i = (cursor[category] ?? 0) % bank.length
   cursor[category] = i + 1

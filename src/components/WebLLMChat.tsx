@@ -4,6 +4,7 @@ import { liteRespond } from '../lib/liteSocratic'
 import { useProgress } from '../hooks/useProgress'
 import { retrieveForQuery } from '../lib/retrieval'
 import { loadHistory, archiveSession, deleteSession, type ChatSession } from '../lib/chatHistory'
+import type { Problem } from '../data/problems'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -12,20 +13,49 @@ interface Message {
 
 interface WebLLMChatProps {
   onStatusChange?: (status: string) => void
+  problem?: Problem
+  onSolved?: (problemId: number) => void
 }
 
 type Mode = 'lite' | 'loading' | 'ai'
 
-const SYSTEM_PROMPT = `You are a DSA interview coach. Your role is to help users develop problem-solving skills, not to give them answers.
+// Builds a system prompt that includes the active problem's context.
+// The AI knows the intended pattern internally but must NOT reveal it —
+// it guides the learner Socratically through Observe → Structure → Pattern → Invariant → Implementation.
+function buildSystemPrompt(problem: Problem | undefined): string {
+  const base = `You are a DSA interview coach for PatternOS. Guide learners to RECOGNIZE algorithmic patterns through Socratic questioning — never give direct solutions.
 
 RULES:
-1. NEVER provide complete solutions or working code on the first response.
-2. ALWAYS ask guiding Socratic questions to help the user discover the answer themselves.
-3. If the user pastes code, analyze its Big-O complexity and ask what they think could be improved — do NOT fix it for them.
-4. Focus on: (a) What data structure fits this problem? (b) What pattern might apply? (c) What edge cases should they consider? (d) What's the brute force vs optimal approach?
-5. Be encouraging but firm. If they ask for the answer directly, redirect with a hint.
-6. Keep responses concise (2-4 sentences) to maintain engagement.
-7. Use the user's vocabulary and refer to patterns by name (Two Pointers, Sliding Window, etc.) when relevant.`
+1. NEVER reveal the solution pattern name directly. Let the learner discover it.
+2. Ask ONE focused Socratic question at a time.
+3. Guide through: Observe → Structure → Pattern → Invariant → Implementation → Complexity.
+4. If the user pastes code, analyze its complexity and ask what could be improved — do NOT fix it for them.
+5. Be encouraging but firm — redirect direct solution requests with a targeted hint.
+6. Keep responses to 2–4 sentences.
+7. Refer to patterns by name (Two Pointers, Sliding Window, etc.) only AFTER the learner identifies them first.`
+
+  if (!problem) return base
+
+  return `${base}
+
+ACTIVE PROBLEM: "${problem.title}" (${problem.difficulty})
+TARGET PATTERN: ${problem.pattern} — DO NOT reveal this name directly. Guide the learner to discover it.
+KEY OBSERVATION TO LEAD TOWARD: ${problem.observation}
+STRUCTURAL CLUE: ${problem.structuralClue}
+CORE INVARIANT: ${problem.invariant}
+EXPECTED COMPLEXITY: Time ${problem.expectedTime}, Space ${problem.expectedSpace}
+
+PROGRESSIVE HINTS — use sparingly, in order, only when the learner is stuck:
+${problem.hints.map((h, i) => `  ${i + 1}. "${h}"`).join('\n')}`
+}
+
+// Welcome message seeded with the problem context.
+function buildProblemWelcome(problem: Problem): Message {
+  return {
+    role: 'assistant',
+    content: `Let's work through ${problem.title} together.\n\n${problem.description}\n\nBefore writing any code — what do you notice about this problem? What information are you given, and what are you trying to find?`,
+  }
+}
 
 function isLowPowerDevice(): boolean {
   const nav = navigator as Navigator & { deviceMemory?: number }
@@ -36,15 +66,13 @@ function isLowPowerDevice(): boolean {
 
 const CHAT_STORAGE_KEY = 'dsa-coach:chat'
 
-const WELCOME_MESSAGE: Message = {
+const GENERIC_WELCOME: Message = {
   role: 'assistant',
   content:
     "Welcome to the Socratic Chamber. I'm your DSA interview coach. Paste a problem or your code, and I'll guide you through it with questions — never spoilers. What are we working on today?",
 }
 
-// Persists across tab switches (Chat unmounts when you leave the tab) and
-// page reloads — reads once on mount, writes on every change.
-function loadStoredMessages(): Message[] {
+function loadInitialMessages(problem: Problem | undefined): Message[] {
   try {
     const raw = localStorage.getItem(CHAT_STORAGE_KEY)
     if (raw) {
@@ -52,9 +80,9 @@ function loadStoredMessages(): Message[] {
       if (Array.isArray(parsed) && parsed.length > 0) return parsed
     }
   } catch {
-    // ignore — fall through to default
+    // ignore
   }
-  return [WELCOME_MESSAGE]
+  return [problem ? buildProblemWelcome(problem) : GENERIC_WELCOME]
 }
 
 const MessageBubble = memo(function MessageBubble({ msg }: { msg: Message }) {
@@ -118,7 +146,7 @@ const ChatInputBar = memo(function ChatInputBar({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask about a problem or paste your code..."
+          placeholder="Ask about this problem or paste your code..."
           className="flex-1 bg-surface-raised border border-border-subtle rounded-xl px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors"
         />
         <button
@@ -178,7 +206,8 @@ const ChatInputBar = memo(function ChatInputBar({
                           {firstUserMsg && firstUserMsg.content.length > 60 ? '…' : ''}
                         </div>
                         <div className="text-[10px] text-text-muted mt-0.5">
-                          {date.toLocaleDateString()} {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {date.toLocaleDateString()}{' '}
+                          {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           {' · '}
                           {session.messages.length} messages
                         </div>
@@ -201,18 +230,45 @@ const ChatInputBar = memo(function ChatInputBar({
   )
 })
 
-export default function WebLLMChat({ onStatusChange }: WebLLMChatProps) {
-  const [messages, setMessages] = useState<Message[]>(loadStoredMessages)
+export default function WebLLMChat({ onStatusChange, problem, onSolved }: WebLLMChatProps) {
+  const [messages, setMessages] = useState<Message[]>(() => loadInitialMessages(problem))
   const [isThinking, setIsThinking] = useState(false)
-  const [mode, setMode] = useState<Mode>('lite') // starts instant, zero download
+  const [mode, setMode] = useState<Mode>('lite')
   const [downloadProgress, setDownloadProgress] = useState('')
   const [lowPowerWarning] = useState(isLowPowerDevice)
   const [history, setHistory] = useState<ChatSession[]>(loadHistory)
+  const [solvedConfirmed, setSolvedConfirmed] = useState(false)
   const engineRef = useRef<MLCEngine | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const isInitialMount = useRef(true)
   const lastStatusRef = useRef<string>('')
+  // Stable ref to current messages — used by clearChat/loadSession/problemSwitch
+  // without adding `messages` to their useCallback dep arrays.
+  const messagesRef = useRef(messages)
+  // Stable ref to current problem — used by clearChat without adding `problem` to deps.
+  const problemRef = useRef(problem)
+  // Guards the problem-switch effect so it does not fire on first mount.
+  const isProblemFirstMount = useRef(true)
   const { recordActivity, recordProblemSolved } = useProgress()
+
+  // Keep refs in sync with state/props
+  useEffect(() => { messagesRef.current = messages }, [messages])
+  useEffect(() => { problemRef.current = problem }, [problem])
+
+  // Reset conversation when the selected problem changes (skip first mount)
+  const problemId = problem?.id
+  useEffect(() => {
+    if (isProblemFirstMount.current) {
+      isProblemFirstMount.current = false
+      return
+    }
+    if (!problem) return
+    archiveSession(messagesRef.current)
+    setHistory(loadHistory())
+    setMessages([buildProblemWelcome(problem)])
+    try { localStorage.removeItem(CHAT_STORAGE_KEY) } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [problemId])
 
   useEffect(() => {
     const status =
@@ -241,11 +297,10 @@ export default function WebLLMChat({ onStatusChange }: WebLLMChatProps) {
     try {
       localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages))
     } catch {
-      // localStorage unavailable (private mode, quota) — chat still works in-session
+      // localStorage unavailable — chat still works in-session
     }
   }, [messages])
 
-  // Only runs when the user explicitly opts in — never on mount. Defer import of WebLLM.
   const enableFullAI = useCallback(async () => {
     setMode('loading')
     try {
@@ -274,20 +329,19 @@ export default function WebLLMChat({ onStatusChange }: WebLLMChatProps) {
     setIsThinking(true)
     recordActivity()
 
-    // Returns [] instantly if no notes are stored — no embedding model
-    // download for anyone who hasn't used the Knowledge Base.
     const retrieved = await retrieveForQuery(userMsg.content).catch((err) => {
       console.error('Retrieval failed:', err)
       return []
     })
 
     if (mode !== 'ai' || !engineRef.current) {
-      // Lite Mode: instant, rule-based, zero cost — no network, no GPU.
-      const base = liteRespond(userMsg.content)
+      // Lite Mode: instant, rule-based — passes patternTag for problem-aware hints
+      const base = liteRespond(userMsg.content, problemRef.current?.patternTag)
       const reply =
         retrieved.length > 0
-          ? `From your notes ("${retrieved[0].chunk.sourceTitle}"): "${retrieved[0].chunk.text.slice(0, 160)}${retrieved[0].chunk.text.length > 160 ? '…' : ''
-          }"\n\n${base}`
+          ? `From your notes ("${retrieved[0].chunk.sourceTitle}"): "${retrieved[0].chunk.text.slice(0, 160)}${
+              retrieved[0].chunk.text.length > 160 ? '…' : ''
+            }"\n\n${base}`
           : base
       setTimeout(() => {
         setMessages((prev) => [...prev, { role: 'assistant', content: reply }])
@@ -300,11 +354,11 @@ export default function WebLLMChat({ onStatusChange }: WebLLMChatProps) {
       const noteContext =
         retrieved.length > 0
           ? `\n\nRelevant notes from the user's own material — ground your guidance in these where they apply:\n${retrieved
-            .map((r) => '- ' + r.chunk.text)
-            .join('\n')}`
+              .map((r) => '- ' + r.chunk.text)
+              .join('\n')}`
           : ''
       const historyPayload = [
-        { role: 'system', content: SYSTEM_PROMPT + noteContext },
+        { role: 'system', content: buildSystemPrompt(problemRef.current) + noteContext },
         ...messages.slice(-6).map((m) => ({ role: m.role, content: m.content })),
         { role: 'user', content: userMsg.content },
       ]
@@ -327,35 +381,51 @@ export default function WebLLMChat({ onStatusChange }: WebLLMChatProps) {
   }, [isThinking, messages, mode, recordActivity])
 
   const clearChat = useCallback(() => {
-    archiveSession(messages)
+    archiveSession(messagesRef.current)
     setHistory(loadHistory())
-    setMessages([WELCOME_MESSAGE])
+    const resetMsg = problemRef.current ? buildProblemWelcome(problemRef.current) : GENERIC_WELCOME
+    setMessages([resetMsg])
     try {
       localStorage.removeItem(CHAT_STORAGE_KEY)
     } catch {
-      // ignore — in-memory state is already cleared regardless
+      // ignore
     }
-  }, [messages])
+  }, [])
 
-  const loadSession = useCallback(
-    (session: ChatSession) => {
-      // Archive whatever's currently active before switching away from it,
-      // so re-opening this session later doesn't lose the in-progress one.
-      archiveSession(messages)
-      setMessages(session.messages)
-      setHistory(loadHistory())
-    },
-    [messages]
-  )
+  const loadSession = useCallback((session: ChatSession) => {
+    archiveSession(messagesRef.current)
+    setMessages(session.messages)
+    setHistory(loadHistory())
+  }, [])
 
   const removeHistorySession = useCallback((id: string) => {
     setHistory(deleteSession(id))
   }, [])
 
+  const handleSolvedClick = useCallback(() => {
+    // recordProblemSolved bumps the global streak counter (Constellation-agnostic)
+    recordProblemSolved()
+    // onSolved notifies Chat.tsx to update Practice-only progress
+    if (problemRef.current) {
+      onSolved?.(problemRef.current.id)
+    }
+  }, [recordProblemSolved, onSolved])
+
   const lastIsAssistant = messages.length > 1 && messages[messages.length - 1].role === 'assistant'
 
+  const handleSolvedWithConfirm = useCallback(() => {
+    handleSolvedClick()
+    setSolvedConfirmed(true)
+    // Reset confirmation badge after 3 s so it shows again if the user keeps going
+    setTimeout(() => setSolvedConfirmed(false), 3000)
+  }, [handleSolvedClick])
+
   return (
-    <div className="flex flex-col h-full max-h-[calc(100vh-140px)]">
+    // No h-full — WebLLMChat sizes to content inside its p-5 card.
+    // The messages area uses max-h so there is no dead vertical space
+    // when only 2-3 messages exist, and it becomes scrollable as the
+    // conversation grows.
+    <div className="flex flex-col">
       {/* Mode banner */}
       {mode === 'lite' && (
         <div className="mb-3 flex items-center justify-between rounded-lg border border-border-subtle bg-surface-raised px-4 py-2.5 text-xs">
@@ -377,12 +447,14 @@ export default function WebLLMChat({ onStatusChange }: WebLLMChatProps) {
       )}
       {mode === 'loading' && (
         <div className="mb-3 rounded-lg border border-border-subtle bg-surface-raised px-4 py-2.5 text-xs text-accent animate-pulse">
-          {downloadProgress || 'Starting download...'} — Lite Mode still works while this downloads in the background tab.
+          {downloadProgress || 'Starting download...'} — Lite Mode still works while this downloads.
         </div>
       )}
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto space-y-4 pr-2 transform-gpu overscroll-y-contain">
+      {/* Messages — max-h keeps the area proportional to the conversation;
+          no flex-1 here so a short conversation doesn't leave empty air.
+          Becomes scrollable as messages accumulate. */}
+      <div className="overflow-y-auto space-y-4 pr-2 transform-gpu overscroll-y-contain max-h-[calc(100vh-420px)] min-h-[120px]">
         {messages.map((msg, i) => (
           <MessageBubble key={i} msg={msg} />
         ))}
@@ -399,14 +471,30 @@ export default function WebLLMChat({ onStatusChange }: WebLLMChatProps) {
           </div>
         )}
 
-        {!isThinking && lastIsAssistant && (
-          <div className="flex justify-start">
+        {/* Solved action — clear chip, not just a text link */}
+        {!isThinking && lastIsAssistant && !solvedConfirmed && (
+          <div className="flex justify-start pt-1">
             <button
-              onClick={recordProblemSolved}
-              className="text-xs text-accent/80 hover:text-accent font-medium pl-1"
+              onClick={handleSolvedWithConfirm}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-surface-raised px-3 py-1.5 text-xs font-medium text-text-secondary hover:border-success/40 hover:text-success transition-colors"
             >
-              ✓ I solved this problem
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none" className="shrink-0">
+                <path d="M2 5.5l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Mark as solved
             </button>
+          </div>
+        )}
+
+        {/* Solved confirmation badge */}
+        {!isThinking && solvedConfirmed && (
+          <div className="flex justify-start pt-1">
+            <span className="inline-flex items-center gap-1.5 rounded-lg border border-success/30 bg-success/10 px-3 py-1.5 text-xs font-medium text-success">
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none" className="shrink-0">
+                <path d="M2 5.5l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Problem solved ✓
+            </span>
           </div>
         )}
 
