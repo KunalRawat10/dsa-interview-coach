@@ -25,7 +25,7 @@ export default function Chat() {
       </div>
 
       {/* Chat Interface */}
-      <div className="h-full rounded-xl border border-border-subtle bg-surface/30 backdrop-blur-sm p-6">
+      <div className="h-full rounded-xl border border-border-subtle bg-surface/75 shadow-xl shadow-black/40 p-6">
         <WebLLMChat onStatusChange={setStatus} />
       </div>
     </div>
