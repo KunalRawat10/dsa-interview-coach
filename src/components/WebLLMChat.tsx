@@ -3,18 +3,20 @@ import type { MLCEngine, ChatCompletionMessageParam } from '@mlc-ai/web-llm'
 import { liteRespond } from '../lib/liteSocratic'
 import { useProgress } from '../hooks/useProgress'
 import { retrieveForQuery } from '../lib/retrieval'
-import { loadHistory, archiveSession, deleteSession, type ChatSession } from '../lib/chatHistory'
-import type { Problem } from '../data/problems'
+import {
+  loadHistory,
+  persistActiveSession,
+  deleteSession,
+  saveActiveSession,
+  loadActiveSession,
+  createSessionId,
+  type ChatSession,
+} from '../lib/chatHistory'
+import { PROBLEMS, type Problem } from '../data/problems'
 
 interface Message {
   role: 'user' | 'assistant'
   content: string
-}
-
-interface WebLLMChatProps {
-  onStatusChange?: (status: string) => void
-  problem?: Problem
-  onSolved?: (problemId: number) => void
 }
 
 type Mode = 'lite' | 'loading' | 'ai'
@@ -64,25 +66,33 @@ function isLowPowerDevice(): boolean {
   return cores < 4 || mem < 4
 }
 
-const CHAT_STORAGE_KEY = 'dsa-coach:chat'
-
 const GENERIC_WELCOME: Message = {
   role: 'assistant',
   content:
     "Welcome to the Socratic Chamber. I'm your DSA interview coach. Paste a problem or your code, and I'll guide you through it with questions — never spoilers. What are we working on today?",
 }
 
-function loadInitialMessages(problem: Problem | undefined): Message[] {
-  try {
-    const raw = localStorage.getItem(CHAT_STORAGE_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed
+function initChatState(initialProblem?: Problem): { sessionId: string; messages: Message[] } {
+  const saved = loadActiveSession(initialProblem?.id)
+  if (saved && saved.messages.length > 0) {
+    return {
+      sessionId: saved.sessionId,
+      messages: saved.messages,
     }
-  } catch {
-    // ignore
   }
-  return [problem ? buildProblemWelcome(problem) : GENERIC_WELCOME]
+  const newId = createSessionId('INITIAL_MOUNT_CLEAN_SLATE')
+  const initialMessages: Message[] = [initialProblem ? buildProblemWelcome(initialProblem) : GENERIC_WELCOME]
+  const state: ActiveChatState = {
+    sessionId: newId,
+    problemId: initialProblem?.id,
+    messages: initialMessages,
+  }
+  // Immediately persist so StrictMode second-mount or quick remount finds this exact session
+  saveActiveSession(state)
+  return {
+    sessionId: newId,
+    messages: initialMessages,
+  }
 }
 
 const MessageBubble = memo(function MessageBubble({ msg }: { msg: Message }) {
@@ -107,6 +117,7 @@ interface ChatInputBarProps {
   disabled: boolean
   mode: Mode
   history: ChatSession[]
+  activeSessionId: string
   onLoadSession: (session: ChatSession) => void
   onRemoveSession: (id: string) => void
   onClearChat: () => void
@@ -117,6 +128,7 @@ const ChatInputBar = memo(function ChatInputBar({
   disabled,
   mode,
   history,
+  activeSessionId,
   onLoadSession,
   onRemoveSession,
   onClearChat,
@@ -139,7 +151,7 @@ const ChatInputBar = memo(function ChatInputBar({
   }
 
   return (
-    <div className="mt-4 pt-4 border-t border-border-subtle">
+    <div className="mt-4 pt-4 border-t border-border-subtle relative isolate">
       <div className="flex gap-2">
         <input
           type="text"
@@ -179,42 +191,78 @@ const ChatInputBar = memo(function ChatInputBar({
           </span>
 
           {showHistory && (
-            <div className="absolute bottom-full right-0 mb-2 w-80 max-h-72 overflow-y-auto rounded-xl border border-border-subtle bg-surface-raised shadow-xl p-2 text-left z-20">
+            <div
+              className="absolute bottom-full right-0 mb-2 w-84 sm:w-96 max-h-80 overflow-y-auto rounded-xl border border-ink-600 shadow-2xl shadow-black/95 p-2 text-left z-50 isolate"
+              style={{ backgroundColor: '#0A0B0E', opacity: 1 }}
+            >
+              <div className="flex items-center justify-between px-2 py-1.5 border-b border-ink-700/60 mb-1">
+                <span className="font-mono text-[10px] uppercase tracking-wider text-paper-400 font-medium">
+                  Past Sessions ({history.length})
+                </span>
+                <button
+                  onClick={() => setShowHistory(false)}
+                  className="text-paper-400 hover:text-paper-100 text-xs transition-colors p-0.5"
+                  aria-label="Close history"
+                >
+                  ✕
+                </button>
+              </div>
               {history.length === 0 ? (
-                <div className="text-xs text-text-muted p-3">
-                  No past sessions yet — cleared conversations show up here.
+                <div className="text-xs text-paper-400 p-4 text-center">
+                  No saved conversations yet.
                 </div>
               ) : (
                 history.map((session) => {
+                  const isActive = String(session.id) === String(activeSessionId)
                   const firstUserMsg = session.messages.find((m) => m.role === 'user')
                   const preview = firstUserMsg?.content.slice(0, 60) || 'Empty session'
-                  const date = new Date(session.timestamp)
+                  const date = new Date(session.updatedAt || session.timestamp || session.createdAt || Date.now())
                   return (
                     <div
                       key={session.id}
-                      className="flex items-start justify-between gap-2 rounded-lg px-2 py-2 hover:bg-surface/60 transition-colors"
+                      className={`flex items-start justify-between gap-2 rounded-lg px-2.5 py-2 transition-colors border ${
+                        isActive
+                          ? 'border-accent/40 bg-ink-800'
+                          : 'border-transparent hover:bg-ink-800/80'
+                      }`}
+                      style={{ backgroundColor: isActive ? '#111317' : undefined }}
                     >
                       <button
                         onClick={() => {
                           onLoadSession(session)
                           setShowHistory(false)
                         }}
-                        className="flex-1 text-left"
+                        className="flex-1 text-left min-w-0"
                       >
-                        <div className="text-xs text-text-primary line-clamp-1">
-                          {preview}
+                        <div className="flex items-center gap-1.5 text-xs text-paper-100 line-clamp-1 font-medium">
+                          {session.problemTitle ? (
+                            <span className="text-accent text-[11px] shrink-0 font-medium">
+                              [{session.problemTitle}]
+                            </span>
+                          ) : null}
+                          <span className="truncate">{preview}</span>
                           {firstUserMsg && firstUserMsg.content.length > 60 ? '…' : ''}
                         </div>
-                        <div className="text-[10px] text-text-muted mt-0.5">
-                          {date.toLocaleDateString()}{' '}
-                          {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          {' · '}
-                          {session.messages.length} messages
+                        <div className="flex items-center gap-2 text-[10px] text-paper-400 mt-1">
+                          <span>
+                            {date.toLocaleDateString()} {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          <span>·</span>
+                          <span>{session.messages.length} msgs</span>
+                          {isActive && (
+                            <span className="ml-auto text-accent text-[9px] font-mono uppercase tracking-wide">
+                              Active
+                            </span>
+                          )}
                         </div>
                       </button>
                       <button
-                        onClick={() => onRemoveSession(session.id)}
-                        className="text-text-muted hover:text-danger text-xs shrink-0 mt-0.5"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onRemoveSession(session.id)
+                        }}
+                        className="text-paper-400 hover:text-danger text-xs shrink-0 mt-0.5 p-1 transition-colors"
+                        title="Delete conversation"
                       >
                         ✕
                       </button>
@@ -230,8 +278,24 @@ const ChatInputBar = memo(function ChatInputBar({
   )
 })
 
-export default function WebLLMChat({ onStatusChange, problem, onSolved }: WebLLMChatProps) {
-  const [messages, setMessages] = useState<Message[]>(() => loadInitialMessages(problem))
+interface WebLLMChatProps {
+  onStatusChange?: (status: string) => void
+  problem?: Problem
+  userSelectionToken?: number
+  onSolved?: (problemId: number) => void
+  onHistorySyncProblem?: (problem: Problem) => void
+}
+
+export default function WebLLMChat({
+  onStatusChange,
+  problem,
+  userSelectionToken,
+  onSolved,
+  onHistorySyncProblem,
+}: WebLLMChatProps) {
+  const [initialData] = useState(() => initChatState(problem))
+  const [sessionId, setSessionId] = useState(initialData.sessionId)
+  const [messages, setMessages] = useState<Message[]>(initialData.messages)
   const [isThinking, setIsThinking] = useState(false)
   const [mode, setMode] = useState<Mode>('lite')
   const [downloadProgress, setDownloadProgress] = useState('')
@@ -242,33 +306,61 @@ export default function WebLLMChat({ onStatusChange, problem, onSolved }: WebLLM
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const isInitialMount = useRef(true)
   const lastStatusRef = useRef<string>('')
-  // Stable ref to current messages — used by clearChat/loadSession/problemSwitch
-  // without adding `messages` to their useCallback dep arrays.
+
+  // Stable refs to avoid stale closures in callbacks
   const messagesRef = useRef(messages)
-  // Stable ref to current problem — used by clearChat without adding `problem` to deps.
+  const sessionIdRef = useRef(sessionId)
   const problemRef = useRef(problem)
-  // Guards the problem-switch effect so it does not fire on first mount.
-  const isProblemFirstMount = useRef(true)
+  const prevSelectionTokenRef = useRef(userSelectionToken ?? 0)
+
   const { recordActivity, recordProblemSolved } = useProgress()
+
+  // Centralized session ID updater with stack trace logging
+  const setActiveSessionId = useCallback((nextId: string, reason: string) => {
+    console.log('[SESSION ID CHANGE]', {
+      previous: sessionIdRef.current,
+      next: nextId,
+      reason,
+      timestamp: Date.now(),
+      stack: new Error().stack,
+    })
+    sessionIdRef.current = nextId
+    setSessionId(nextId)
+  }, [])
+
+  // Track component mount and unmount with active session ID
+  useEffect(() => {
+    console.log('[CHAT MOUNT]', { sessionId: sessionIdRef.current })
+    return () => {
+      console.log('[CHAT UNMOUNT]', { sessionId: sessionIdRef.current })
+    }
+  }, [])
 
   // Keep refs in sync with state/props
   useEffect(() => { messagesRef.current = messages }, [messages])
+  useEffect(() => { sessionIdRef.current = sessionId }, [sessionId])
   useEffect(() => { problemRef.current = problem }, [problem])
 
-  // Reset conversation when the selected problem changes (skip first mount)
-  const problemId = problem?.id
+  // Handle intentional problem switching ONLY when user clicks ProblemSelector (userSelectionToken increments)
   useEffect(() => {
-    if (isProblemFirstMount.current) {
-      isProblemFirstMount.current = false
-      return
-    }
+    if (userSelectionToken === undefined) return
+    if (userSelectionToken === prevSelectionTokenRef.current) return
+    prevSelectionTokenRef.current = userSelectionToken
+
     if (!problem) return
-    archiveSession(messagesRef.current)
-    setHistory(loadHistory())
-    setMessages([buildProblemWelcome(problem)])
-    try { localStorage.removeItem(CHAT_STORAGE_KEY) } catch { /* ignore */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [problemId])
+
+    // User intentionally selected a different problem from ProblemSelector: start a fresh session
+    const newId = createSessionId('USER_PROBLEM_SELECT')
+    const welcome = buildProblemWelcome(problem)
+    setActiveSessionId(newId, 'USER_PROBLEM_SELECT')
+    messagesRef.current = [welcome]
+    setMessages([welcome])
+    saveActiveSession({
+      sessionId: newId,
+      problemId: problem.id,
+      messages: [welcome],
+    })
+  }, [userSelectionToken, problem, setActiveSessionId])
 
   useEffect(() => {
     const status =
@@ -290,14 +382,6 @@ export default function WebLLMChat({ onStatusChange, problem, onSolved }: WebLLM
       messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
     } else {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }
-  }, [messages])
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages))
-    } catch {
-      // localStorage unavailable — chat still works in-session
     }
   }, [messages])
 
@@ -325,9 +409,20 @@ export default function WebLLMChat({ onStatusChange, problem, onSolved }: WebLLM
     if (!text.trim() || isThinking) return
 
     const userMsg: Message = { role: 'user', content: text.trim() }
-    setMessages((prev) => [...prev, userMsg])
+    const nextMessages = [...messagesRef.current, userMsg]
+    messagesRef.current = nextMessages
+    setMessages(nextMessages)
     setIsThinking(true)
     recordActivity()
+
+    // 1. Authoritative persistence under the stable active session ID
+    const { history: updatedHistory } = persistActiveSession({
+      sessionId: sessionIdRef.current,
+      problemId: problemRef.current?.id,
+      problemTitle: problemRef.current?.title,
+      messages: nextMessages,
+    })
+    setHistory(updatedHistory)
 
     const retrieved = await retrieveForQuery(userMsg.content).catch((err) => {
       console.error('Retrieval failed:', err)
@@ -344,7 +439,16 @@ export default function WebLLMChat({ onStatusChange, problem, onSolved }: WebLLM
             }"\n\n${base}`
           : base
       setTimeout(() => {
-        setMessages((prev) => [...prev, { role: 'assistant', content: reply }])
+        const finalMessages = [...nextMessages, { role: 'assistant' as const, content: reply }]
+        messagesRef.current = finalMessages
+        setMessages(finalMessages)
+        const { history: savedHistory } = persistActiveSession({
+          sessionId: sessionIdRef.current,
+          problemId: problemRef.current?.id,
+          problemTitle: problemRef.current?.title,
+          messages: finalMessages,
+        })
+        setHistory(savedHistory)
         setIsThinking(false)
       }, 300)
       return
@@ -359,7 +463,7 @@ export default function WebLLMChat({ onStatusChange, problem, onSolved }: WebLLM
           : ''
       const historyPayload = [
         { role: 'system', content: buildSystemPrompt(problemRef.current) + noteContext },
-        ...messages.slice(-6).map((m) => ({ role: m.role, content: m.content })),
+        ...messagesRef.current.slice(-6).map((m) => ({ role: m.role, content: m.content })),
         { role: 'user', content: userMsg.content },
       ]
       const reply = await engineRef.current.chat.completions.create({
@@ -368,39 +472,89 @@ export default function WebLLMChat({ onStatusChange, problem, onSolved }: WebLLM
         max_tokens: 256,
       })
       const content = reply.choices[0]?.message?.content || 'Let me think about that...'
-      setMessages((prev) => [...prev, { role: 'assistant', content }])
+      const finalMessages = [...nextMessages, { role: 'assistant' as const, content }]
+      messagesRef.current = finalMessages
+      setMessages(finalMessages)
+      const { history: savedHistory } = persistActiveSession({
+        sessionId: sessionIdRef.current,
+        problemId: problemRef.current?.id,
+        problemTitle: problemRef.current?.title,
+        messages: finalMessages,
+      })
+      setHistory(savedHistory)
     } catch (err) {
       console.error('Chat error:', err)
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: 'I encountered an error. Let me try again — what was your question?' },
-      ])
+      const errorMessages = [
+        ...nextMessages,
+        { role: 'assistant' as const, content: 'I encountered an error. Let me try again — what was your question?' },
+      ]
+      messagesRef.current = errorMessages
+      setMessages(errorMessages)
+      const { history: savedHistory } = persistActiveSession({
+        sessionId: sessionIdRef.current,
+        problemId: problemRef.current?.id,
+        problemTitle: problemRef.current?.title,
+        messages: errorMessages,
+      })
+      setHistory(savedHistory)
     } finally {
       setIsThinking(false)
     }
-  }, [isThinking, messages, mode, recordActivity])
+  }, [isThinking, mode, recordActivity])
 
   const clearChat = useCallback(() => {
-    archiveSession(messagesRef.current)
-    setHistory(loadHistory())
+    // Start a fresh session with a new unique session ID
+    const newId = createSessionId('RESET_CHAT')
     const resetMsg = problemRef.current ? buildProblemWelcome(problemRef.current) : GENERIC_WELCOME
+    setActiveSessionId(newId, 'RESET_CHAT')
+    messagesRef.current = [resetMsg]
     setMessages([resetMsg])
-    try {
-      localStorage.removeItem(CHAT_STORAGE_KEY)
-    } catch {
-      // ignore
-    }
-  }, [])
+    saveActiveSession({
+      sessionId: newId,
+      problemId: problemRef.current?.id,
+      messages: [resetMsg],
+    })
+  }, [setActiveSessionId])
 
   const loadSession = useCallback((session: ChatSession) => {
-    archiveSession(messagesRef.current)
+    const restoredId = String(session.id)
+    console.log('[HISTORY RESTORE]', {
+      sessionId: restoredId,
+      previousActiveSessionId: sessionIdRef.current,
+      timestamp: Date.now(),
+      stack: new Error().stack,
+    })
+
+    // Pure in-memory update: NO saveActiveSession, NO persistActiveSession, NO upsertHistorySession, NO createSessionId
+    sessionIdRef.current = restoredId
+    setSessionId(restoredId)
+    messagesRef.current = session.messages
     setMessages(session.messages)
-    setHistory(loadHistory())
-  }, [])
+
+    // If the restored session belongs to a different problem, sync ProblemSelector display only
+    if (session.problemId && onHistorySyncProblem) {
+      const matchingProblem = PROBLEMS.find((p) => p.id === session.problemId)
+      if (matchingProblem && matchingProblem.id !== problemRef.current?.id) {
+        onHistorySyncProblem(matchingProblem)
+      }
+    }
+  }, [onHistorySyncProblem])
 
   const removeHistorySession = useCallback((id: string) => {
-    setHistory(deleteSession(id))
-  }, [])
+    const targetId = String(id)
+    const updated = deleteSession(targetId)
+    setHistory(updated)
+    // If the user deleted the active session, assign a new session ID to the active chat
+    if (sessionIdRef.current === targetId) {
+      const newId = createSessionId('DELETE_ACTIVE_SESSION')
+      setActiveSessionId(newId, 'DELETE_ACTIVE_SESSION')
+      saveActiveSession({
+        sessionId: newId,
+        problemId: problemRef.current?.id,
+        messages: messagesRef.current,
+      })
+    }
+  }, [setActiveSessionId])
 
   const handleSolvedClick = useCallback(() => {
     // recordProblemSolved bumps the global streak counter (Constellation-agnostic)
@@ -419,6 +573,9 @@ export default function WebLLMChat({ onStatusChange, problem, onSolved }: WebLLM
     // Reset confirmation badge after 3 s so it shows again if the user keeps going
     setTimeout(() => setSolvedConfirmed(false), 3000)
   }, [handleSolvedClick])
+
+
+
 
   return (
     // No h-full — WebLLMChat sizes to content inside its p-5 card.
@@ -507,6 +664,7 @@ export default function WebLLMChat({ onStatusChange, problem, onSolved }: WebLLM
         disabled={isThinking}
         mode={mode}
         history={history}
+        activeSessionId={sessionId}
         onLoadSession={loadSession}
         onRemoveSession={removeHistorySession}
         onClearChat={clearChat}

@@ -19,6 +19,7 @@ export default function App() {
   const isFirstRender = useRef(true)
 
   const isHome = activeTab === 'home' || activeTab === 'dashboard'
+  const isPractice = activeTab === 'practice' || activeTab === 'chat'
 
   useEffect(() => {
     if (mainRef.current && !isFirstRender.current) {
@@ -43,7 +44,9 @@ export default function App() {
           className={`flex-1 w-full mx-auto ${
             isHome
               ? 'pt-0 pb-28 sm:pb-36'
-              : 'px-6 pt-24 pb-32 max-w-5xl'
+              : isPractice
+                ? 'px-6 pt-24 pb-32 max-w-6xl'
+                : 'px-6 pt-24 pb-32 max-w-5xl'
           }`}
         >
           {isHome && <HomePage onNavigate={setActiveTab} />}

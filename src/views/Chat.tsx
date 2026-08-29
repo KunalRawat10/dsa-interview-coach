@@ -22,10 +22,21 @@ export default function Chat() {
     return PROBLEMS.find((p) => p.id === progress.currentProblemId) ?? PROBLEMS[0]
   })
 
-  const handleSelectProblem = (problem: Problem) => {
+  // Explicit token that only increments when user clicks ProblemSelector
+  const [userSelectionToken, setUserSelectionToken] = useState<number>(0)
+
+  // Triggered ONLY when the user clicks ProblemSelector to switch problems
+  const handleUserSelectProblem = (problem: Problem) => {
     setActiveProblem(problem)
     setCurrentProblem(problem.id)
     recordAttempt(problem.id)
+    setUserSelectionToken((t) => t + 1)
+  }
+
+  // Triggered ONLY when a historical conversation is loaded to sync ProblemSelector display
+  const handleHistorySyncProblem = (problem: Problem) => {
+    setActiveProblem(problem)
+    setCurrentProblem(problem.id)
   }
 
   const handleSolved = (problemId: number) => {
@@ -33,12 +44,9 @@ export default function Chat() {
   }
 
   return (
-    // Use flex-col + overflow-y-auto so the header and selector are always
-    // visible and the chamber fills only the remaining space — no fixed
-    // h-calc that causes overflow on varying viewport sizes.
-    <div className="animate-fade-in flex flex-col gap-0">
+    <div className="animate-fade-in flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-3">
         <div>
           <h2 className="text-2xl font-medium">Socratic Chamber</h2>
           <p className="text-sm text-text-tertiary mt-1">
@@ -59,20 +67,23 @@ export default function Chat() {
           No backdrop-filter. Solid bg-surface-raised surface. */}
       <ProblemSelector
         activeProblem={activeProblem}
-        onSelect={handleSelectProblem}
+        onSelect={handleUserSelectProblem}
         totalSolved={totalSolved}
         solvedIds={solvedIds}
         attemptedIds={attemptedIds}
       />
 
-      {/* Chat Interface — height is managed inside WebLLMChat via
-          max-h so it fills available space without leaving dead air.
+      {/* Chat Interface — min-h-[420px] gives the chamber workspace presence
+          on large screens without reintroducing the flex-fill dead-air problem.
+          The card grows naturally as conversation deepens.
           No backdrop-filter. bg-surface/75 is plain alpha compositing. */}
-      <div className="rounded-xl border border-border-subtle bg-surface/75 shadow-xl shadow-black/40 p-5">
+      <div className="rounded-xl border border-border-subtle bg-surface/75 shadow-xl shadow-black/40 p-5 min-h-[420px]">
         <WebLLMChat
           onStatusChange={setStatus}
           problem={activeProblem}
+          userSelectionToken={userSelectionToken}
           onSolved={handleSolved}
+          onHistorySyncProblem={handleHistorySyncProblem}
         />
       </div>
     </div>
