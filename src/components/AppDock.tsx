@@ -11,9 +11,9 @@ export default function AppDock({ activeTab, onNavigate }: AppDockProps) {
     const items: DockItemData[] = [
         {
             icon: <Telescope size={20} />,
-            label: 'Observatory',
-            onClick: () => onNavigate('dashboard'),
-            isActive: activeTab === 'dashboard',
+            label: 'Home',
+            onClick: () => onNavigate('home'),
+            isActive: activeTab === 'home' || activeTab === 'dashboard',
         },
         {
             icon: <Network size={20} />,
@@ -23,19 +23,19 @@ export default function AppDock({ activeTab, onNavigate }: AppDockProps) {
         },
         {
             icon: <MessageCircleQuestion size={20} />,
-            label: 'Socratic Chamber',
-            onClick: () => onNavigate('chat'),
-            isActive: activeTab === 'chat',
+            label: 'Practice',
+            onClick: () => onNavigate('practice'),
+            isActive: activeTab === 'practice' || activeTab === 'chat',
         },
         {
             icon: <Code2 size={20} />,
-            label: 'Complexity Forge',
-            onClick: () => onNavigate('analyzer'),
-            isActive: activeTab === 'analyzer',
+            label: 'Complexity',
+            onClick: () => onNavigate('complexity'),
+            isActive: activeTab === 'complexity' || activeTab === 'analyzer',
         },
         {
             icon: <BookOpen size={20} />,
-            label: 'Knowledge Base',
+            label: 'Knowledge',
             onClick: () => onNavigate('knowledge'),
             isActive: activeTab === 'knowledge',
         },
