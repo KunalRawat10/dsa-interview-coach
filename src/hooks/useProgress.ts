@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 
 export type Difficulty = 'easy' | 'medium' | 'hard'
 
@@ -70,16 +70,16 @@ export function useProgress() {
         saveProgress(progress)
     }, [progress])
 
-    const recordProblemSolved = () =>
-        setProgress((p) => bumpStreak({ ...p, problemsSolved: p.problemsSolved + 1 }))
+    const recordProblemSolved = useCallback(() =>
+        setProgress((p) => bumpStreak({ ...p, problemsSolved: p.problemsSolved + 1 })), [])
 
-    const recordPatternMastered = () =>
-        setProgress((p) => bumpStreak({ ...p, patternsMastered: p.patternsMastered + 1 }))
+    const recordPatternMastered = useCallback(() =>
+        setProgress((p) => bumpStreak({ ...p, patternsMastered: p.patternsMastered + 1 })), [])
 
     // Bumps a specific pattern's mastery/solved count, weighted by how hard the
     // problem was — a Hard solve moves mastery further than an Easy one. Also
     // keeps the global solved counter in sync.
-    const recordPatternProgress = (patternId: string, difficulty: Difficulty = 'medium') =>
+    const recordPatternProgress = useCallback((patternId: string, difficulty: Difficulty = 'medium') =>
         setProgress((p) => {
             const current = p.patternProgress[patternId] ?? { mastered: 0, solved: 0 }
             const nextMastered = Math.min(1, current.mastered + DIFFICULTY_DELTA[difficulty])
@@ -91,11 +91,11 @@ export function useProgress() {
                     [patternId]: { mastered: nextMastered, solved: current.solved + 1 },
                 },
             })
-        })
+        }), [])
 
     // The undo/struggled path — walks mastery and solved count back down by the
     // same weighting, floored at zero. Does not touch the streak.
-    const decreasePatternProgress = (patternId: string, difficulty: Difficulty = 'medium') =>
+    const decreasePatternProgress = useCallback((patternId: string, difficulty: Difficulty = 'medium') =>
         setProgress((p) => {
             const current = p.patternProgress[patternId] ?? { mastered: 0, solved: 0 }
             const nextMastered = Math.max(0, current.mastered - DIFFICULTY_DELTA[difficulty])
@@ -108,11 +108,11 @@ export function useProgress() {
                     [patternId]: { mastered: nextMastered, solved: nextSolved },
                 },
             }
-        })
+        }), [])
 
-    const recordActivity = () => setProgress((p) => bumpStreak(p))
+    const recordActivity = useCallback(() => setProgress((p) => bumpStreak(p)), [])
 
-    const resetProgress = () => setProgress({ ...ZERO_PROGRESS })
+    const resetProgress = useCallback(() => setProgress({ ...ZERO_PROGRESS }), [])
 
     return {
         progress,

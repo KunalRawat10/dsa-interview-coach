@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
-import * as webllm from '@mlc-ai/web-llm'
+import { useEffect, useRef, useState, useCallback, memo } from 'react'
+import type { MLCEngine, ChatCompletionMessageParam } from '@mlc-ai/web-llm'
 import { liteRespond } from '../lib/liteSocratic'
 import { useProgress } from '../hooks/useProgress'
 import { retrieveForQuery } from '../lib/retrieval'
@@ -57,31 +57,184 @@ function loadStoredMessages(): Message[] {
   return [WELCOME_MESSAGE]
 }
 
+const MessageBubble = memo(function MessageBubble({ msg }: { msg: Message }) {
+  const isUser = msg.role === 'user'
+  return (
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+      <div
+        className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
+          isUser
+            ? 'bg-accent/15 text-text-primary rounded-br-md'
+            : 'bg-surface-raised border border-border-subtle text-text-secondary rounded-bl-md'
+        }`}
+      >
+        {msg.content}
+      </div>
+    </div>
+  )
+})
+
+interface ChatInputBarProps {
+  onSend: (text: string) => void
+  disabled: boolean
+  mode: Mode
+  history: ChatSession[]
+  onLoadSession: (session: ChatSession) => void
+  onRemoveSession: (id: string) => void
+  onClearChat: () => void
+}
+
+const ChatInputBar = memo(function ChatInputBar({
+  onSend,
+  disabled,
+  mode,
+  history,
+  onLoadSession,
+  onRemoveSession,
+  onClearChat,
+}: ChatInputBarProps) {
+  const [input, setInput] = useState('')
+  const [showHistory, setShowHistory] = useState(false)
+
+  const handleSend = () => {
+    const trimmed = input.trim()
+    if (!trimmed || disabled) return
+    onSend(trimmed)
+    setInput('')
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }
+
+  return (
+    <div className="mt-4 pt-4 border-t border-border-subtle">
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Ask about a problem or paste your code..."
+          className="flex-1 bg-surface-raised border border-border-subtle rounded-xl px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors"
+        />
+        <button
+          onClick={handleSend}
+          disabled={!input.trim() || disabled}
+          className="px-5 py-3 bg-accent text-white rounded-xl text-sm font-medium hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+        >
+          Send
+        </button>
+      </div>
+      <div className="flex justify-between items-center mt-2 text-[10px] text-text-muted">
+        <span>Press Enter to send</span>
+        <div className="flex items-center gap-3 relative">
+          <button
+            onClick={() => setShowHistory((v) => !v)}
+            className="text-text-muted hover:text-accent transition-colors"
+          >
+            History{history.length > 0 ? ` (${history.length})` : ''}
+          </button>
+          <button
+            onClick={onClearChat}
+            className="text-text-muted hover:text-danger transition-colors"
+          >
+            Reset chat
+          </button>
+          <span>
+            {mode === 'ai'
+              ? 'Full local AI — no data leaves your browser'
+              : 'Lite Mode — instant, no download'}
+          </span>
+
+          {showHistory && (
+            <div className="absolute bottom-full right-0 mb-2 w-80 max-h-72 overflow-y-auto rounded-xl border border-border-subtle bg-surface-raised shadow-xl p-2 text-left z-20">
+              {history.length === 0 ? (
+                <div className="text-xs text-text-muted p-3">
+                  No past sessions yet — cleared conversations show up here.
+                </div>
+              ) : (
+                history.map((session) => {
+                  const firstUserMsg = session.messages.find((m) => m.role === 'user')
+                  const preview = firstUserMsg?.content.slice(0, 60) || 'Empty session'
+                  const date = new Date(session.timestamp)
+                  return (
+                    <div
+                      key={session.id}
+                      className="flex items-start justify-between gap-2 rounded-lg px-2 py-2 hover:bg-surface/60 transition-colors"
+                    >
+                      <button
+                        onClick={() => {
+                          onLoadSession(session)
+                          setShowHistory(false)
+                        }}
+                        className="flex-1 text-left"
+                      >
+                        <div className="text-xs text-text-primary line-clamp-1">
+                          {preview}
+                          {firstUserMsg && firstUserMsg.content.length > 60 ? '…' : ''}
+                        </div>
+                        <div className="text-[10px] text-text-muted mt-0.5">
+                          {date.toLocaleDateString()} {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {' · '}
+                          {session.messages.length} messages
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => onRemoveSession(session.id)}
+                        className="text-text-muted hover:text-danger text-xs shrink-0 mt-0.5"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+})
+
 export default function WebLLMChat({ onStatusChange }: WebLLMChatProps) {
   const [messages, setMessages] = useState<Message[]>(loadStoredMessages)
-  const [input, setInput] = useState('')
   const [isThinking, setIsThinking] = useState(false)
   const [mode, setMode] = useState<Mode>('lite') // starts instant, zero download
   const [downloadProgress, setDownloadProgress] = useState('')
   const [lowPowerWarning] = useState(isLowPowerDevice)
-  const [showHistory, setShowHistory] = useState(false)
   const [history, setHistory] = useState<ChatSession[]>(loadHistory)
-  const engineRef = useRef<webllm.MLCEngine | null>(null)
+  const engineRef = useRef<MLCEngine | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const isInitialMount = useRef(true)
+  const lastStatusRef = useRef<string>('')
   const { recordActivity, recordProblemSolved } = useProgress()
 
   useEffect(() => {
-    onStatusChange?.(
+    const status =
       mode === 'lite'
         ? 'Lite Mode — instant, no download'
         : mode === 'loading'
           ? downloadProgress || 'Starting download...'
           : 'Full AI ready — works offline'
-    )
+
+    if (lastStatusRef.current !== status) {
+      lastStatusRef.current = status
+      onStatusChange?.(status)
+    }
   }, [mode, downloadProgress, onStatusChange])
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (isInitialMount.current) {
+      isInitialMount.current = false
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
   }, [messages])
 
   useEffect(() => {
@@ -92,11 +245,12 @@ export default function WebLLMChat({ onStatusChange }: WebLLMChatProps) {
     }
   }, [messages])
 
-  // Only runs when the user explicitly opts in — never on mount.
+  // Only runs when the user explicitly opts in — never on mount. Defer import of WebLLM.
   const enableFullAI = useCallback(async () => {
     setMode('loading')
     try {
-      const engine = await webllm.CreateMLCEngine('Qwen2.5-1.5B-Instruct-q4f32_1-MLC', {
+      const webllmModule = await import('@mlc-ai/web-llm')
+      const engine = await webllmModule.CreateMLCEngine('Qwen2.5-1.5B-Instruct-q4f32_1-MLC', {
         initProgressCallback: (report) => {
           const pct = Math.round(report.progress * 100)
           setDownloadProgress(`Downloading model... ${pct}%`)
@@ -112,12 +266,11 @@ export default function WebLLMChat({ onStatusChange }: WebLLMChatProps) {
     }
   }, [])
 
-  const sendMessage = useCallback(async () => {
-    if (!input.trim() || isThinking) return
+  const sendMessage = useCallback(async (text: string) => {
+    if (!text.trim() || isThinking) return
 
-    const userMsg: Message = { role: 'user', content: input.trim() }
+    const userMsg: Message = { role: 'user', content: text.trim() }
     setMessages((prev) => [...prev, userMsg])
-    setInput('')
     setIsThinking(true)
     recordActivity()
 
@@ -150,13 +303,13 @@ export default function WebLLMChat({ onStatusChange }: WebLLMChatProps) {
             .map((r) => '- ' + r.chunk.text)
             .join('\n')}`
           : ''
-      const history = [
+      const historyPayload = [
         { role: 'system', content: SYSTEM_PROMPT + noteContext },
         ...messages.slice(-6).map((m) => ({ role: m.role, content: m.content })),
         { role: 'user', content: userMsg.content },
       ]
       const reply = await engineRef.current.chat.completions.create({
-        messages: history as webllm.ChatCompletionMessageParam[],
+        messages: historyPayload as ChatCompletionMessageParam[],
         temperature: 0.7,
         max_tokens: 256,
       })
@@ -171,7 +324,7 @@ export default function WebLLMChat({ onStatusChange }: WebLLMChatProps) {
     } finally {
       setIsThinking(false)
     }
-  }, [input, isThinking, messages, mode, recordActivity])
+  }, [isThinking, messages, mode, recordActivity])
 
   const clearChat = useCallback(() => {
     archiveSession(messages)
@@ -190,7 +343,6 @@ export default function WebLLMChat({ onStatusChange }: WebLLMChatProps) {
       // so re-opening this session later doesn't lose the in-progress one.
       archiveSession(messages)
       setMessages(session.messages)
-      setShowHistory(false)
       setHistory(loadHistory())
     },
     [messages]
@@ -199,13 +351,6 @@ export default function WebLLMChat({ onStatusChange }: WebLLMChatProps) {
   const removeHistorySession = useCallback((id: string) => {
     setHistory(deleteSession(id))
   }, [])
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage()
-    }
-  }
 
   const lastIsAssistant = messages.length > 1 && messages[messages.length - 1].role === 'assistant'
 
@@ -237,18 +382,9 @@ export default function WebLLMChat({ onStatusChange }: WebLLMChatProps) {
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+      <div className="flex-1 overflow-y-auto space-y-4 pr-2 transform-gpu overscroll-y-contain">
         {messages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div
-              className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${msg.role === 'user'
-                  ? 'bg-accent/15 text-text-primary rounded-br-md'
-                  : 'bg-surface-raised border border-border-subtle text-text-secondary rounded-bl-md'
-                }`}
-            >
-              {msg.content}
-            </div>
-          </div>
+          <MessageBubble key={i} msg={msg} />
         ))}
 
         {isThinking && (
@@ -278,90 +414,15 @@ export default function WebLLMChat({ onStatusChange }: WebLLMChatProps) {
       </div>
 
       {/* Input */}
-      <div className="mt-4 pt-4 border-t border-border-subtle">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask about a problem or paste your code..."
-            className="flex-1 bg-surface-raised border border-border-subtle rounded-xl px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors"
-          />
-          <button
-            onClick={sendMessage}
-            disabled={!input.trim() || isThinking}
-            className="px-5 py-3 bg-accent text-white rounded-xl text-sm font-medium hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-          >
-            Send
-          </button>
-        </div>
-        <div className="flex justify-between items-center mt-2 text-[10px] text-text-muted">
-          <span>Press Enter to send</span>
-          <div className="flex items-center gap-3 relative">
-            <button
-              onClick={() => setShowHistory((v) => !v)}
-              className="text-text-muted hover:text-accent transition-colors"
-            >
-              History{history.length > 0 ? ` (${history.length})` : ''}
-            </button>
-            <button
-              onClick={clearChat}
-              className="text-text-muted hover:text-danger transition-colors"
-            >
-              Reset chat
-            </button>
-            <span>
-              {mode === 'ai'
-                ? 'Full local AI — no data leaves your browser'
-                : 'Lite Mode — instant, no download'}
-            </span>
-
-            {showHistory && (
-              <div className="absolute bottom-full right-0 mb-2 w-80 max-h-72 overflow-y-auto rounded-xl border border-border-subtle bg-surface-raised shadow-xl p-2 text-left z-20">
-                {history.length === 0 ? (
-                  <div className="text-xs text-text-muted p-3">
-                    No past sessions yet — cleared conversations show up here.
-                  </div>
-                ) : (
-                  history.map((session) => {
-                    const firstUserMsg = session.messages.find((m) => m.role === 'user')
-                    const preview = firstUserMsg?.content.slice(0, 60) || 'Empty session'
-                    const date = new Date(session.timestamp)
-                    return (
-                      <div
-                        key={session.id}
-                        className="flex items-start justify-between gap-2 rounded-lg px-2 py-2 hover:bg-surface/60 transition-colors"
-                      >
-                        <button
-                          onClick={() => loadSession(session)}
-                          className="flex-1 text-left"
-                        >
-                          <div className="text-xs text-text-primary line-clamp-1">
-                            {preview}
-                            {firstUserMsg && firstUserMsg.content.length > 60 ? '…' : ''}
-                          </div>
-                          <div className="text-[10px] text-text-muted mt-0.5">
-                            {date.toLocaleDateString()} {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            {' · '}
-                            {session.messages.length} messages
-                          </div>
-                        </button>
-                        <button
-                          onClick={() => removeHistorySession(session.id)}
-                          className="text-text-muted hover:text-danger text-xs shrink-0 mt-0.5"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    )
-                  })
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+      <ChatInputBar
+        onSend={sendMessage}
+        disabled={isThinking}
+        mode={mode}
+        history={history}
+        onLoadSession={loadSession}
+        onRemoveSession={removeHistorySession}
+        onClearChat={clearChat}
+      />
     </div>
   )
 }

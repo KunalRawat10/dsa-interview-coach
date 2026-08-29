@@ -1,3 +1,5 @@
+import { memo } from 'react'
+
 export default function Practice() {
   return (
     <section id="practice" className="relative py-20 sm:py-24 lg:py-32">
@@ -154,7 +156,7 @@ export default function Practice() {
   )
 }
 
-function ReasoningStep({
+const ReasoningStep = memo(function ReasoningStep({
   num,
   label,
   text,
@@ -187,4 +189,4 @@ function ReasoningStep({
       <p className="mt-2 text-xs sm:text-sm leading-relaxed text-paper-200">{text}</p>
     </div>
   )
-}
+})
