@@ -4,6 +4,7 @@ import { ProblemSelector } from '../components/ProblemSelector'
 import { PROBLEMS } from '../data/problems'
 import type { Problem } from '../data/problems'
 import { usePracticeProgress } from '../hooks/usePracticeProgress'
+import { loadActiveSession } from '../lib/chatHistory'
 
 export default function Chat() {
   const [status, setStatus] = useState('Initializing...')
@@ -17,9 +18,11 @@ export default function Chat() {
     recordSolved,
   } = usePracticeProgress()
 
-  // Initialize from persisted problem id, default to first problem
+  // Initialize from active chat problem if present, otherwise fall back to persisted progress, then default to first problem
   const [activeProblem, setActiveProblem] = useState<Problem>(() => {
-    return PROBLEMS.find((p) => p.id === progress.currentProblemId) ?? PROBLEMS[0]
+    const activeChat = loadActiveSession()
+    const targetId = activeChat?.problemId ?? progress.currentProblemId
+    return PROBLEMS.find((p) => p.id === targetId) ?? PROBLEMS[0]
   })
 
   // Explicit token that only increments when user clicks ProblemSelector
