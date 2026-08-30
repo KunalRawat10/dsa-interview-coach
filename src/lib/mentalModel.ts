@@ -93,10 +93,11 @@ export function applyInterpretationDelta(
   for (const nodeId of interpretation.touchedNodeIds) {
     const existing = nextModel.nodes[nodeId]
     const wordCount = interpretation.cleanedText.split(/\s+/).length
-    const isSingleWord = wordCount <= 2 && !interpretation.hasCode
+    const isContextual = interpretation.contextuallyMatchedNodeIds?.includes(nodeId)
+    const isSingleWordOutOfContext = wordCount <= 1 && !isContextual && !interpretation.hasCode
 
     let newState: NodeUnderstandingState = 'ARTICULATED'
-    if (isSingleWord && existing?.state !== 'ARTICULATED') {
+    if (isSingleWordOutOfContext && existing?.state !== 'ARTICULATED') {
       newState = 'NAMED'
     }
     if (interpretation.hasCode) {

@@ -24,6 +24,7 @@ export interface LearnerInterpretation {
 
   touchedNodeIds: string[]
   touchedEdgeIds: string[]
+  contextuallyMatchedNodeIds?: string[]
 
   suggestedApproachId?: string
 
@@ -183,25 +184,35 @@ export function interpretLearnerMessage(
   // 4. Node & Edge Touched Matching
   const touchedNodeIds: string[] = []
   const touchedEdgeIds: string[] = []
+  const contextuallyMatchedNodeIds: string[] = []
+
+  const normalizedLower = lower
+    .replace(/['’]ve\b/g, ' have')
+    .replace(/['’]d\b/g, ' would')
+    .replace(/['’]ll\b/g, ' will')
+    .replace(/['’]re\b/g, ' are')
+    .replace(/['’]s\b/g, ' is')
+    .replace(/n['’]t\b/g, ' not')
+    .replace(/['’]m\b/g, ' am')
 
   for (const node of activeGraph.nodes) {
     const matchesEvidence = node.expectedEvidencePatterns.some((pattern) => {
       const words = pattern.trim().split(/\s+/)
       if (words.length > 1) {
-        const regexStr = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+.*?\\s*')
-        const regex = new RegExp(`\\b${regexStr}`, 'i')
-        if (regex.test(lower) || regex.test(rawText)) return true
+        const regexStr = words.map((w) => `\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).join('.*?')
+        const regex = new RegExp(regexStr, 'i')
+        if (regex.test(normalizedLower) || regex.test(lower) || regex.test(rawText)) return true
       }
       const directRegex = new RegExp(`\\b${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
-      return directRegex.test(lower) || directRegex.test(rawText)
+      return directRegex.test(normalizedLower) || directRegex.test(lower) || directRegex.test(rawText)
     })
     if (matchesEvidence) {
       touchedNodeIds.push(node.id)
     }
   }
 
-  // 4b. Active-Target Contextual Evidence Matching (when global matching finds 0 concepts)
-  if (touchedNodeIds.length === 0 && activeThread) {
+  // 4b. Active-Target Contextual Evidence Matching
+  if (activeThread) {
     const currentTargetNodeId = activeThread.current.targetNodeId
     const currentTargetEdgeId = activeThread.current.targetEdgeId
     const targetEdge = currentTargetEdgeId
@@ -213,22 +224,24 @@ export function interpretLearnerMessage(
     )
 
     for (const targetId of candidateTargetNodeIds) {
+      if (touchedNodeIds.includes(targetId)) continue
       const targetNode = activeGraph.nodes.find((n) => n.id === targetId)
       if (!targetNode?.contextualEvidencePatterns) continue
 
       const matchesContextual = targetNode.contextualEvidencePatterns.some((pattern) => {
         const words = pattern.trim().split(/\s+/)
         if (words.length > 1) {
-          const regexStr = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+.*?\\s*')
-          const regex = new RegExp(`\\b${regexStr}`, 'i')
-          if (regex.test(lower) || regex.test(rawText)) return true
+          const regexStr = words.map((w) => `\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).join('.*?')
+          const regex = new RegExp(regexStr, 'i')
+          if (regex.test(normalizedLower) || regex.test(lower) || regex.test(rawText)) return true
         }
         const directRegex = new RegExp(`\\b${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
-        return directRegex.test(lower) || directRegex.test(rawText)
+        return directRegex.test(normalizedLower) || directRegex.test(lower) || directRegex.test(rawText)
       })
 
       if (matchesContextual) {
         touchedNodeIds.push(targetNode.id)
+        contextuallyMatchedNodeIds.push(targetNode.id)
       }
     }
   }
@@ -265,6 +278,7 @@ export function interpretLearnerMessage(
     isPassiveAgreement,
     touchedNodeIds,
     touchedEdgeIds,
+    contextuallyMatchedNodeIds,
     suggestedApproachId,
     misconceptions,
     misconceptionExplanation,
