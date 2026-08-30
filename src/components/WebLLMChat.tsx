@@ -200,7 +200,7 @@ const MarkdownContent = memo(function MarkdownContent({ content }: { content: st
     }
 
     // Empty line — paragraph break
-    if (line.trim() === '') {
+    if (line.trim() === '' || /^<!--[\s\S]*?-->$/.test(line.trim())) {
       i++
       continue
     }
