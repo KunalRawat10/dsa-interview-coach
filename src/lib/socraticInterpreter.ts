@@ -200,6 +200,39 @@ export function interpretLearnerMessage(
     }
   }
 
+  // 4b. Active-Target Contextual Evidence Matching (when global matching finds 0 concepts)
+  if (touchedNodeIds.length === 0 && activeThread) {
+    const currentTargetNodeId = activeThread.current.targetNodeId
+    const currentTargetEdgeId = activeThread.current.targetEdgeId
+    const targetEdge = currentTargetEdgeId
+      ? activeGraph.edges.find((e) => e.id === currentTargetEdgeId)
+      : undefined
+
+    const candidateTargetNodeIds = Array.from(
+      new Set([currentTargetNodeId, targetEdge?.to].filter(Boolean) as string[])
+    )
+
+    for (const targetId of candidateTargetNodeIds) {
+      const targetNode = activeGraph.nodes.find((n) => n.id === targetId)
+      if (!targetNode?.contextualEvidencePatterns) continue
+
+      const matchesContextual = targetNode.contextualEvidencePatterns.some((pattern) => {
+        const words = pattern.trim().split(/\s+/)
+        if (words.length > 1) {
+          const regexStr = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+.*?\\s*')
+          const regex = new RegExp(`\\b${regexStr}`, 'i')
+          if (regex.test(lower) || regex.test(rawText)) return true
+        }
+        const directRegex = new RegExp(`\\b${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
+        return directRegex.test(lower) || directRegex.test(rawText)
+      })
+
+      if (matchesContextual) {
+        touchedNodeIds.push(targetNode.id)
+      }
+    }
+  }
+
   // Check problem-specific examples if problem provided (e.g. arithmetic complements in Two Sum)
   if (problem?.examples && problem.patternTag === 'hash-map') {
     if (/\b(target\s*-\s*\w+|\bcomplement\b|\b\d+\s*-\s*\d+)/i.test(lower)) {

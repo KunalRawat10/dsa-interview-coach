@@ -19,7 +19,8 @@ export function renderSocraticResponse(
   edge: ConceptEdge | undefined,
   interpretation: LearnerInterpretation,
   problem?: Problem,
-  graph?: ApproachGraph
+  graph?: ApproachGraph,
+  isRePrompt: boolean = false
 ): string {
   const exInput = problem?.examples?.[0]?.input ?? '[1,2,3,1]'
 
@@ -94,37 +95,61 @@ export function renderSocraticResponse(
 
   // ── 7. PROBE ADJACENT RELATIONSHIP & DEEPEN REASONING ──────────────────────
   if (edge?.id === 'brute_to_bottleneck') {
+    if (isRePrompt) {
+      return `What work could we avoid instead of searching through the array from scratch each time?`
+    }
     return `Yes — the number of comparisons grows quadratically. The interesting part is that we're repeatedly searching through values we've already looked at. What work could we avoid instead of searching through the array from scratch each time?`
   }
   if (edge?.id === 'bottleneck_to_memory') {
+    if (isRePrompt) {
+      return `What information about the numbers we have already seen could we keep track of so we don't have to scan backwards?`
+    }
     return `Exactly — we're repeatedly searching through information we've already examined. What could we remember while scanning so we don't have to start that search again?`
   }
   if (edge?.id === 'memory_to_set') {
+    if (isRePrompt) {
+      return `What kind of structure gives us instant constant-time lookups for values we have already encountered?`
+    }
     return `Yes — that's the important shift. Instead of searching the earlier part of the array again, we keep the values we've already encountered somewhere. What kind of structure could make checking that collection fast?`
   }
   if (edge?.id === 'set_to_lookup') {
-    return `Yes, a Set fits that job. Why does a Set help us avoid repeatedly searching through the array?`
+    return `Why does a Set help us avoid repeatedly searching through the array?`
   }
   if (edge?.id === 'lookup_to_hit') {
+    if (isRePrompt) {
+      return `What should we do when the current value is NOT in the Set?`
+    }
     return `Exactly — seeing it in the Set means we've encountered that value before. What should we do when the current value is NOT in the Set?`
   }
 
   // Two Sum Specific Relational Bridges
   if (edge?.id === 'bottleneck_to_complement') {
+    if (isRePrompt) {
+      return `If current number is x and target is T, what partner value completes the sum?`
+    }
     return `Exactly — we're repeatedly searching through information we've already examined. If current number is x and target is T, what complement are you looking for?`
   }
   if (edge?.id === 'complement_to_map') {
     return `We need the map because Two Sum asks for the original indices, not just whether a value exists. A Set could tell us that 2 exists, but it couldn't tell us where that 2 occurred. With that in mind, what should the map store for each number?`
   }
   if (edge?.id === 'map_to_key_val') {
+    if (isRePrompt) {
+      return `When we store numbers and their indices in the Hash Map, what should be the key and what should be the value?`
+    }
     return `Exactly — number as key, index as value lets us instantly find original positions. If current number is x and target is T, what complement are you looking for in the Hash Map?`
   }
 
   // Stock Specific Relational Bridges
   if (edge?.id === 'bottleneck_to_min_price') {
+    if (isRePrompt) {
+      return `What price from past days do we need to remember to calculate the best profit if selling today?`
+    }
     return `Exactly — we're repeatedly searching through information we've already examined. What could we remember while scanning so we don't have to look back through previous days?`
   }
   if (edge?.id === 'min_price_to_profit') {
+    if (isRePrompt) {
+      return `If we know the cheapest past price, how do we calculate today's profit?`
+    }
     return `Exactly — if we always remember the cheapest earlier price, what could we compare today's price against to calculate today's best profit?`
   }
 

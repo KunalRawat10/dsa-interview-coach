@@ -110,15 +110,15 @@ export function applyInterpretationDelta(
     }
   }
 
-  // 4. Update Touched Edges & Edges pointing to demonstrated nodes
+  // 4. Update Touched Edges
   for (const edge of graph.edges) {
-    if (
-      interpretation.touchedEdgeIds.includes(edge.id) ||
-      (interpretation.touchedNodeIds.includes(edge.to) && nextModel.nodes[edge.from]?.state === 'ARTICULATED')
-    ) {
+    if (interpretation.touchedEdgeIds.includes(edge.id)) {
       const existing = nextModel.edges[edge.id]
-      const hasJustification = interpretation.cleanedText.split(/\s+/).length > 4
-      const edgeState: EdgeUnderstandingState = hasJustification ? 'JUSTIFIED' : 'CLAIMED'
+      const touchesBothNodes =
+        interpretation.touchedNodeIds.includes(edge.from) && interpretation.touchedNodeIds.includes(edge.to)
+      const hasCausalConnective =
+        /\b(because|so that|so we don't|avoids?|instead of|prevents?|since|due to)\b/i.test(interpretation.rawText)
+      const edgeState: EdgeUnderstandingState = touchesBothNodes || hasCausalConnective ? 'JUSTIFIED' : 'CLAIMED'
 
       nextModel.edges[edge.id] = {
         state: edgeState,

@@ -63,7 +63,8 @@ export interface ConceptNode {
   label: string
   category: ConceptCategory
   semanticSummary: string            // What this concept means (facts, not dialogue)
-  expectedEvidencePatterns: string[] // Semantic keywords/phrases indicating this concept
+  expectedEvidencePatterns: string[] // Semantic keywords/phrases independently indicating this concept
+  contextualEvidencePatterns?: string[] // Elliptical/noun phrases answering this concept when it is the active question target
   prerequisiteNodeIds: string[]      // Concepts that should ideally be grounded first
 }
 
@@ -107,6 +108,7 @@ export const CONTAINS_DUPLICATE_CANONICAL: ApproachGraph = {
       category: 'GOAL',
       semanticSummary: 'Determine whether any value in the array appears at least twice.',
       expectedEvidencePatterns: ['duplicate', 'appears twice', 'two of the same', 'repeats', 'asking for', 'stands out', 'seen twice', 'same number', 'distinct'],
+      contextualEvidencePatterns: ['if any number appears twice', 'if there are duplicates', 'whether numbers repeat', 'find duplicates', 'check for duplicate'],
       prerequisiteNodeIds: [],
     },
     {
@@ -115,6 +117,7 @@ export const CONTAINS_DUPLICATE_CANONICAL: ApproachGraph = {
       category: 'BRUTE_FORCE',
       semanticSummary: 'Compare each element against every other element in O(n²) time.',
       expectedEvidencePatterns: ['compare', 'check each', 'all pairs', 'nested loop', 'check each against', 'two loops', 'pairwise', 'compare each', 'check all', 'check every', 'compare all', 'try each'],
+      contextualEvidencePatterns: ['compare each pair', 'all pairs', 'check each number with others', 'nested loops', 'two loops'],
       prerequisiteNodeIds: ['goal'],
     },
     {
@@ -123,6 +126,7 @@ export const CONTAINS_DUPLICATE_CANONICAL: ApproachGraph = {
       category: 'BOTTLENECK',
       semanticSummary: 'Rescanning previously examined numbers from scratch for every element creates quadratic O(n²) growth.',
       expectedEvidencePatterns: ['repeatedly', 'rescan', 'looking through old', 'checking again', 'search from scratch', 'repeat work', 'o(n^2)', 'o(n²)', 'quadratic', 'already checked', 'already seen', 'checked before'],
+      contextualEvidencePatterns: ['checking again', 'rescanning old numbers', 'checking values already checked', 'searching from scratch', 'quadratic work'],
       prerequisiteNodeIds: ['brute_force'],
     },
     {
@@ -131,6 +135,28 @@ export const CONTAINS_DUPLICATE_CANONICAL: ApproachGraph = {
       category: 'OPTIMIZATION_STRATEGY',
       semanticSummary: 'Remembering already encountered values avoids backwards array scans.',
       expectedEvidencePatterns: ['remember', 'keep track', 'store what we saw', 'save previous', 'record seen', 'keep the numbers', 'keep previous', 'store seen', 'save what we have seen'],
+      contextualEvidencePatterns: [
+        'number which has occurred',
+        'number which occurred',
+        'occurred previously',
+        'occurred before',
+        'numbers occurred',
+        'number occurred',
+        'numbers seen',
+        'ones we already seen',
+        'ones we have seen',
+        'ones we saw',
+        'past numbers',
+        'elements seen',
+        'values seen',
+        'numbers passed',
+        'numbers already visited',
+        'elements already visited',
+        'previous numbers',
+        'previous elements',
+        'previous values',
+        'already encountered',
+      ],
       prerequisiteNodeIds: ['repeated_work'],
     },
     {
@@ -139,6 +165,7 @@ export const CONTAINS_DUPLICATE_CANONICAL: ApproachGraph = {
       category: 'DATA_STRUCTURE',
       semanticSummary: 'A Hash Set provides average O(1) constant-time membership lookups without ordering.',
       expectedEvidencePatterns: ['set', 'hashset', 'hash set'],
+      contextualEvidencePatterns: ['a set', 'hashset', 'hash table', 'hash set'],
       prerequisiteNodeIds: ['memory'],
     },
     {
@@ -147,6 +174,7 @@ export const CONTAINS_DUPLICATE_CANONICAL: ApproachGraph = {
       category: 'INVARIANT_MECHANISM',
       semanticSummary: 'Querying whether the current number already exists in the Set via hash indexing in O(1) time.',
       expectedEvidencePatterns: ['check if in set', 'already there', 'contains', 'membership', 'ask whether', 'already exists', 'exists', 'look up in set', 'in the set', 'in set'],
+      contextualEvidencePatterns: ['if it exists', 'if it is already in the set', 'whether it was seen', 'membership check', 'if present', 'is it in the set'],
       prerequisiteNodeIds: ['set_structure'],
     },
     {
@@ -155,6 +183,7 @@ export const CONTAINS_DUPLICATE_CANONICAL: ApproachGraph = {
       category: 'OPERATIONAL_BRANCH',
       semanticSummary: 'If the current number is already in the Set, a duplicate is confirmed; return true immediately.',
       expectedEvidencePatterns: ['return true', 'found duplicate', 'match', 'it is a duplicate', 'already there', 'duplicate'],
+      contextualEvidencePatterns: ['duplicate found', 'return true', 'found a match', 'it is a duplicate', 'there is a duplicate'],
       prerequisiteNodeIds: ['membership_lookup'],
     },
     {
@@ -163,6 +192,7 @@ export const CONTAINS_DUPLICATE_CANONICAL: ApproachGraph = {
       category: 'OPERATIONAL_BRANCH',
       semanticSummary: 'If the current number is not in the Set, insert it and continue scanning.',
       expectedEvidencePatterns: ['add it', 'insert', 'put in set', 'add to the set', 'add to set', 'save it', 'store it in set'],
+      contextualEvidencePatterns: ['add it', 'insert into set', 'save the number', 'put it in the set', 'add to set'],
       prerequisiteNodeIds: ['membership_lookup'],
     },
     {
@@ -171,6 +201,7 @@ export const CONTAINS_DUPLICATE_CANONICAL: ApproachGraph = {
       category: 'TERMINATION',
       semanticSummary: 'If the scan reaches the end of the array without any membership hits, return false.',
       expectedEvidencePatterns: ['return false', 'end of array', 'no duplicates', 'finished loop', 'finish without', 'none found'],
+      contextualEvidencePatterns: ['return false', 'no duplicates exist', 'end of array', 'no duplicate found'],
       prerequisiteNodeIds: ['hit_branch', 'miss_branch'],
     },
   ],
@@ -229,6 +260,7 @@ export const CONTAINS_DUPLICATE_SORTING: ApproachGraph = {
       category: 'OPTIMIZATION_STRATEGY',
       semanticSummary: 'Sorting the array brings identical duplicate values adjacent to each other.',
       expectedEvidencePatterns: ['sort', 'sorting', 'sort the array', 'sort first'],
+      contextualEvidencePatterns: ['sort the array', 'sort first', 'sorting'],
       prerequisiteNodeIds: ['goal'],
     },
     {
@@ -237,6 +269,7 @@ export const CONTAINS_DUPLICATE_SORTING: ApproachGraph = {
       category: 'BOTTLENECK',
       semanticSummary: 'Sorting requires O(n log n) time and mutates the array order or takes auxiliary memory.',
       expectedEvidencePatterns: ['n log n', 'o(n log n)', 'slower than o(n)', 'sorting cost'],
+      contextualEvidencePatterns: ['n log n time', 'takes n log n', 'slower than linear'],
       prerequisiteNodeIds: ['sorting_structure'],
     },
     {
@@ -245,6 +278,7 @@ export const CONTAINS_DUPLICATE_SORTING: ApproachGraph = {
       category: 'INVARIANT_MECHANISM',
       semanticSummary: 'Compare nums[i] with nums[i-1] in a single linear pass.',
       expectedEvidencePatterns: ['adjacent', 'next to each other', 'neighbor', 'nums[i] == nums[i-1]'],
+      contextualEvidencePatterns: ['check adjacent numbers', 'compare with neighbor', 'next to each other'],
       prerequisiteNodeIds: ['sorting_structure'],
     },
   ],
@@ -275,6 +309,7 @@ export const TWO_SUM_CANONICAL: ApproachGraph = {
       category: 'GOAL',
       semanticSummary: 'Find two distinct indices whose values sum up to target.',
       expectedEvidencePatterns: ['add up to target', 'sum to target', 'find two numbers', 'indices', 'target', 'sum', 'asking for'],
+      contextualEvidencePatterns: ['two numbers that add to target', 'find indices', 'sum to target'],
       prerequisiteNodeIds: [],
     },
     {
@@ -283,6 +318,7 @@ export const TWO_SUM_CANONICAL: ApproachGraph = {
       category: 'BRUTE_FORCE',
       semanticSummary: 'Check every pair (nums[i], nums[j]) in O(n²) time to see if they sum to target.',
       expectedEvidencePatterns: ['compare', 'all pairs', 'check every pair', 'two loops', 'nested loops', 'every pair', 'check each pair', 'check all pairs', 'pairwise'],
+      contextualEvidencePatterns: ['check all pairs', 'two loops to test every sum', 'check every pair'],
       prerequisiteNodeIds: ['goal'],
     },
     {
@@ -291,6 +327,7 @@ export const TWO_SUM_CANONICAL: ApproachGraph = {
       category: 'BOTTLENECK',
       semanticSummary: 'Scanning the rest of the array repeatedly for each number creates quadratic work.',
       expectedEvidencePatterns: ['looking for matching', 'rescanning', 'searching the rest', 'repeatedly looking', 'o(n^2)', 'o(n²)', 'quadratic', 'already checked', 'checked before'],
+      contextualEvidencePatterns: ['searching for the matching number again', 'rescanning for partner', 'looking through previous numbers'],
       prerequisiteNodeIds: ['brute_force'],
     },
     {
@@ -299,6 +336,16 @@ export const TWO_SUM_CANONICAL: ApproachGraph = {
       category: 'OPTIMIZATION_STRATEGY',
       semanticSummary: 'For any number x, there is exactly one partner (target - x) that completes the sum.',
       expectedEvidencePatterns: ['target - current', 'target minus', 'complement', '9 - 7', 'target - nums[i]', 'subtract', 'target - x'],
+      contextualEvidencePatterns: [
+        'the matching partner',
+        'the other number',
+        'partner number',
+        'target minus current',
+        'target minus x',
+        'the difference',
+        'complement',
+        'target - current',
+      ],
       prerequisiteNodeIds: ['repeated_work'],
     },
     {
@@ -307,6 +354,7 @@ export const TWO_SUM_CANONICAL: ApproachGraph = {
       category: 'DATA_STRUCTURE',
       semanticSummary: 'Hash Map stores the number as the key and its original array index as the value.',
       expectedEvidencePatterns: ['hashmap', 'hash map', 'map', 'dictionary', 'key and value', 'dict'],
+      contextualEvidencePatterns: ['a hash map', 'hashmap', 'map', 'dictionary', 'key value store'],
       prerequisiteNodeIds: ['complement_formula'],
     },
     {
@@ -315,6 +363,7 @@ export const TWO_SUM_CANONICAL: ApproachGraph = {
       category: 'INVARIANT_MECHANISM',
       semanticSummary: 'Key is nums[i] for fast lookup; value is index i to return the required indices.',
       expectedEvidencePatterns: ['number as key', 'index as value', 'key is number', 'value is index', 'store the index', 'save index', 'keep index'],
+      contextualEvidencePatterns: ['number as key and index as value', 'key is number value is index', 'store the index', 'save its position'],
       prerequisiteNodeIds: ['map_structure'],
     },
     {
@@ -323,6 +372,7 @@ export const TWO_SUM_CANONICAL: ApproachGraph = {
       category: 'OPERATIONAL_BRANCH',
       semanticSummary: 'If complement is found in map, return [map.get(complement), currentIndex].',
       expectedEvidencePatterns: ['return both indices', 'return [map[comp], i]', 'return the indices', 'found complement', 'in the map', 'in map'],
+      contextualEvidencePatterns: ['return both indices', 'return the indices', 'return current and stored index'],
       prerequisiteNodeIds: ['key_value_roles'],
     },
     {
@@ -331,6 +381,7 @@ export const TWO_SUM_CANONICAL: ApproachGraph = {
       category: 'OPERATIONAL_BRANCH',
       semanticSummary: 'If complement is not in map, save map.set(nums[i], i) and continue.',
       expectedEvidencePatterns: ['save in map', 'map.set', 'store current number and index', 'add to map', 'put in map'],
+      contextualEvidencePatterns: ['store current number and index', 'save to map', 'add to map'],
       prerequisiteNodeIds: ['key_value_roles'],
     },
     {
@@ -339,6 +390,7 @@ export const TWO_SUM_CANONICAL: ApproachGraph = {
       category: 'TERMINATION',
       semanticSummary: 'Problem guarantees exactly one valid pair exists.',
       expectedEvidencePatterns: ['found solution', 'guaranteed answer', 'one solution'],
+      contextualEvidencePatterns: ['found unique pair', 'the pair is found'],
       prerequisiteNodeIds: ['hit_branch'],
     },
   ],
@@ -393,6 +445,7 @@ export const STOCK_CANONICAL: ApproachGraph = {
       category: 'GOAL',
       semanticSummary: 'Find maximum difference prices[j] - prices[i] where j > i (sell day is after buy day).',
       expectedEvidencePatterns: ['max profit', 'buy low sell high', 'maximum profit', 'biggest difference', 'profit', 'asking for'],
+      contextualEvidencePatterns: ['maximum profit from buying and selling', 'best profit'],
       prerequisiteNodeIds: [],
     },
     {
@@ -401,6 +454,7 @@ export const STOCK_CANONICAL: ApproachGraph = {
       category: 'BRUTE_FORCE',
       semanticSummary: 'Compare every buying day with every subsequent selling day in O(n²) time.',
       expectedEvidencePatterns: ['compare every buy day', 'all pairs of days', 'two loops', 'check each sell day', 'all pairs', 'try every pair', 'nested loop'],
+      contextualEvidencePatterns: ['try every pair of buy and sell days', 'two loops over days'],
       prerequisiteNodeIds: ['goal'],
     },
     {
@@ -409,6 +463,7 @@ export const STOCK_CANONICAL: ApproachGraph = {
       category: 'BOTTLENECK',
       semanticSummary: 'Looking back through all previous days for every selling day is redundant.',
       expectedEvidencePatterns: ['checking old days', 'looking through previous days', 'rescanning past', 'o(n^2)', 'o(n²)', 'quadratic', 'already checked'],
+      contextualEvidencePatterns: ['looking back at past days', 'checking previous buy prices again'],
       prerequisiteNodeIds: ['brute_force'],
     },
     {
@@ -417,6 +472,15 @@ export const STOCK_CANONICAL: ApproachGraph = {
       category: 'OPTIMIZATION_STRATEGY',
       semanticSummary: 'To maximize profit selling today, the best buy day is simply the lowest price seen so far.',
       expectedEvidencePatterns: ['cheapest price', 'lowest price so far', 'min price', 'track the minimum', 'remember the cheapest', 'lowest price', 'min_price', 'minimum price'],
+      contextualEvidencePatterns: [
+        'the lowest price so far',
+        'the cheapest price so far',
+        'the minimum price so far',
+        'cheapest one so far',
+        'lowest so far',
+        'cheapest so far',
+        'the min price',
+      ],
       prerequisiteNodeIds: ['repeated_work'],
     },
     {
@@ -425,6 +489,7 @@ export const STOCK_CANONICAL: ApproachGraph = {
       category: 'INVARIANT_MECHANISM',
       semanticSummary: 'Profit if selling today = prices[i] - minPrice.',
       expectedEvidencePatterns: ['today price minus min', 'prices[i] - min_price', 'current - min', 'subtract min', 'today - min', 'price - min'],
+      contextualEvidencePatterns: ['today price minus min price', 'current price minus lowest price', 'subtract min price'],
       prerequisiteNodeIds: ['min_price_invariant'],
     },
     {
@@ -433,6 +498,7 @@ export const STOCK_CANONICAL: ApproachGraph = {
       category: 'OPERATIONAL_BRANCH',
       semanticSummary: 'maxProfit = max(maxProfit, prices[i] - minPrice); minPrice = min(minPrice, prices[i]).',
       expectedEvidencePatterns: ['update max profit', 'max(maxProfit', 'keep highest profit', 'track max profit', 'max_profit'],
+      contextualEvidencePatterns: ['update the highest profit', 'max of current and previous profit', 'keep the biggest profit'],
       prerequisiteNodeIds: ['today_profit_calc'],
     },
     {
@@ -441,6 +507,7 @@ export const STOCK_CANONICAL: ApproachGraph = {
       category: 'TERMINATION',
       semanticSummary: 'After one linear pass, return maxProfit (defaults to 0 if no positive profit).',
       expectedEvidencePatterns: ['return maxProfit', 'return max profit', 'return 0 if no profit', 'return 0', 'end of days'],
+      contextualEvidencePatterns: ['return max profit', 'return 0 if no profit'],
       prerequisiteNodeIds: ['update_max_profit'],
     },
   ],
@@ -487,6 +554,7 @@ export const VALID_PARENTHESES_CANONICAL: ApproachGraph = {
       category: 'GOAL',
       semanticSummary: 'Determine if every opening bracket is closed by the same type in correct LIFO order.',
       expectedEvidencePatterns: ['valid parentheses', 'matching brackets', 'closed in correct order', 'nested', 'parentheses', 'brackets', 'asking for'],
+      contextualEvidencePatterns: ['brackets closed in right order', 'matching opening and closing brackets'],
       prerequisiteNodeIds: [],
     },
     {
@@ -495,6 +563,7 @@ export const VALID_PARENTHESES_CANONICAL: ApproachGraph = {
       category: 'BRUTE_FORCE',
       semanticSummary: 'Repeatedly searching and removing "()", "[]", "{}" pairs in O(n²) time.',
       expectedEvidencePatterns: ['replace pairs', 'remove ()', 'substitute strings', 'string replace', 'replace', 'remove matched'],
+      contextualEvidencePatterns: ['replace matching pairs repeatedly', 'string replace until empty'],
       prerequisiteNodeIds: ['goal'],
     },
     {
@@ -503,6 +572,14 @@ export const VALID_PARENTHESES_CANONICAL: ApproachGraph = {
       category: 'OPTIMIZATION_STRATEGY',
       semanticSummary: 'The most recently opened bracket must be the first one closed.',
       expectedEvidencePatterns: ['most recent', 'last opened', 'lifo', 'innermost bracket first', 'most recently', 'last in first out'],
+      contextualEvidencePatterns: [
+        'the most recent opening bracket',
+        'the last opened bracket',
+        'the innermost bracket',
+        'the last one',
+        'innermost one',
+        'most recent one',
+      ],
       prerequisiteNodeIds: ['goal'],
     },
     {
@@ -511,6 +588,7 @@ export const VALID_PARENTHESES_CANONICAL: ApproachGraph = {
       category: 'DATA_STRUCTURE',
       semanticSummary: 'A Stack provides O(1) push and pop honoring the LIFO order.',
       expectedEvidencePatterns: ['stack', 'push and pop', 'use a stack'],
+      contextualEvidencePatterns: ['a stack', 'stack'],
       prerequisiteNodeIds: ['lifo_requirement'],
     },
     {
@@ -519,6 +597,7 @@ export const VALID_PARENTHESES_CANONICAL: ApproachGraph = {
       category: 'OPERATIONAL_BRANCH',
       semanticSummary: 'When an opening bracket (, [, { is scanned, push it onto the Stack.',
       expectedEvidencePatterns: ['push opening', 'push to stack', 'if open bracket push', 'push it', 'add open to stack'],
+      contextualEvidencePatterns: ['push it', 'push open bracket', 'add to stack'],
       prerequisiteNodeIds: ['stack_structure'],
     },
     {
@@ -527,6 +606,7 @@ export const VALID_PARENTHESES_CANONICAL: ApproachGraph = {
       category: 'OPERATIONAL_BRANCH',
       semanticSummary: 'When a closing bracket is scanned, pop the stack top; if it does not match, return false.',
       expectedEvidencePatterns: ['pop and check', 'matches top', 'mismatch return false', 'pop from stack', 'pop', 'match closing'],
+      contextualEvidencePatterns: ['pop and compare', 'check if matches top', 'pop from stack'],
       prerequisiteNodeIds: ['stack_structure'],
     },
     {
@@ -535,6 +615,7 @@ export const VALID_PARENTHESES_CANONICAL: ApproachGraph = {
       category: 'TERMINATION',
       semanticSummary: 'At the end of the string, return stack.length === 0 (all opened brackets were matched).',
       expectedEvidencePatterns: ['stack is empty', 'return stack.length == 0', 'no leftover brackets', 'stack is clear', 'empty stack'],
+      contextualEvidencePatterns: ['empty stack', 'stack length is zero', 'all brackets matched'],
       prerequisiteNodeIds: ['push_open_branch', 'match_pop_branch'],
     },
   ],
@@ -565,6 +646,7 @@ export const CONTAINER_WATER_CANONICAL: ApproachGraph = {
       category: 'GOAL',
       semanticSummary: 'Find two lines that together with the x-axis form a container holding the maximum water.',
       expectedEvidencePatterns: ['max water', 'container area', 'maximum area', 'width times height', 'most water', 'hold the most water', 'container', 'area', 'asking for'],
+      contextualEvidencePatterns: ['maximum water contained', 'find largest area'],
       prerequisiteNodeIds: [],
     },
     {
@@ -573,6 +655,7 @@ export const CONTAINER_WATER_CANONICAL: ApproachGraph = {
       category: 'BRUTE_FORCE',
       semanticSummary: 'Compute area for all n(n-1)/2 pairs of lines in O(n²) time.',
       expectedEvidencePatterns: ['all pairs', 'check every line with every other', 'nested loops', 'two loops', 'every pair of lines', 'all lines', 'calculate area for each pair', 'pairs of lines', 'compare lines'],
+      contextualEvidencePatterns: ['all pairs of lines', 'test every combination of lines'],
       prerequisiteNodeIds: ['goal'],
     },
     {
@@ -581,6 +664,7 @@ export const CONTAINER_WATER_CANONICAL: ApproachGraph = {
       category: 'INVARIANT_MECHANISM',
       semanticSummary: 'Area is constrained by the shorter line multiplied by the distance between them.',
       expectedEvidencePatterns: ['min height times width', 'min(h[l], h[r])', 'shorter line limits water', 'width times height', 'height times width', 'shorter line'],
+      contextualEvidencePatterns: ['shorter height times width', 'shorter line times distance', 'min height times distance'],
       prerequisiteNodeIds: ['goal'],
     },
     {
@@ -589,6 +673,7 @@ export const CONTAINER_WATER_CANONICAL: ApproachGraph = {
       category: 'OPTIMIZATION_STRATEGY',
       semanticSummary: 'Start with maximum width (L = 0, R = n - 1) and contract inward.',
       expectedEvidencePatterns: ['two pointers', 'start at ends', 'left at 0 right at n-1', 'pointers at boundaries', 'keep the two ends', 'pointers at ends'],
+      contextualEvidencePatterns: ['at the two ends', 'pointers at boundaries', 'left at 0 and right at end'],
       prerequisiteNodeIds: ['area_formula'],
     },
     {
@@ -597,6 +682,15 @@ export const CONTAINER_WATER_CANONICAL: ApproachGraph = {
       category: 'OPERATIONAL_BRANCH',
       semanticSummary: 'Moving the taller line only decreases width without increasing height constraint. Therefore, always advance the shorter line.',
       expectedEvidencePatterns: ['move shorter line', 'advance smaller height', 'increment left if shorter', 'decrement right if shorter', 'move the shorter', 'move shorter pointer', 'move smaller'],
+      contextualEvidencePatterns: [
+        'the shorter one',
+        'the shorter line',
+        'the smaller height',
+        'the smaller one',
+        'smaller line',
+        'move shorter pointer',
+        'move the shorter line',
+      ],
       prerequisiteNodeIds: ['two_pointers'],
     },
     {
@@ -605,6 +699,7 @@ export const CONTAINER_WATER_CANONICAL: ApproachGraph = {
       category: 'TERMINATION',
       semanticSummary: 'Terminate when L >= R and return the recorded maxArea.',
       expectedEvidencePatterns: ['while l < r', 'pointers meet', 'return max area', 'stop when pointers meet', 'pointers cross'],
+      contextualEvidencePatterns: ['when pointers meet', 'left crosses right'],
       prerequisiteNodeIds: ['move_shorter_pointer'],
     },
   ],
@@ -643,6 +738,7 @@ export const BINARY_SEARCH_CANONICAL: ApproachGraph = {
       category: 'GOAL',
       semanticSummary: 'Find target index in a sorted array in O(log n) runtime.',
       expectedEvidencePatterns: ['find target', 'search target', 'return index', 'target', 'search', 'asking for'],
+      contextualEvidencePatterns: ['find target index', 'search in sorted array'],
       prerequisiteNodeIds: [],
     },
     {
@@ -651,6 +747,7 @@ export const BINARY_SEARCH_CANONICAL: ApproachGraph = {
       category: 'BRUTE_FORCE',
       semanticSummary: 'Scan elements from index 0 to n-1 in O(n) time.',
       expectedEvidencePatterns: ['linear scan', 'check one by one', 'loop from 0', 'o(n) scan', 'scan', 'check each element', 'scan through'],
+      contextualEvidencePatterns: ['scan from index 0', 'check every element one by one'],
       prerequisiteNodeIds: ['goal'],
     },
     {
@@ -659,6 +756,7 @@ export const BINARY_SEARCH_CANONICAL: ApproachGraph = {
       category: 'OPTIMIZATION_STRATEGY',
       semanticSummary: 'Because the array is sorted, comparing target with the middle element eliminates half of the remaining elements.',
       expectedEvidencePatterns: ['array is sorted', 'sorted order', 'elements are sorted', 'sorted property', 'sorted', 'ordered'],
+      contextualEvidencePatterns: ['array is already sorted', 'elements are in order', 'sorted order'],
       prerequisiteNodeIds: ['goal'],
     },
     {
@@ -667,6 +765,7 @@ export const BINARY_SEARCH_CANONICAL: ApproachGraph = {
       category: 'INVARIANT_MECHANISM',
       semanticSummary: 'Calculate mid = L + Math.floor((R - L) / 2). If nums[mid] === target, return mid.',
       expectedEvidencePatterns: ['check middle', 'nums[mid]', 'midpoint', 'compare with middle', 'look at the middle', 'middle element', 'middle'],
+      contextualEvidencePatterns: ['the middle', 'middle element', 'mid point', 'middle number', 'element at mid'],
       prerequisiteNodeIds: ['sorted_property'],
     },
     {
@@ -675,6 +774,7 @@ export const BINARY_SEARCH_CANONICAL: ApproachGraph = {
       category: 'OPERATIONAL_BRANCH',
       semanticSummary: 'If nums[mid] < target, search right half (L = mid + 1); if nums[mid] > target, search left half (R = mid - 1).',
       expectedEvidencePatterns: ['left = mid + 1', 'right = mid - 1', 'eliminate half', 'halve search space', 'throw away half', 'discard half', 'impossible'],
+      contextualEvidencePatterns: ['the left half', 'the right half', 'eliminate half', 'discard half'],
       prerequisiteNodeIds: ['midpoint_comparison'],
     },
     {
@@ -683,6 +783,7 @@ export const BINARY_SEARCH_CANONICAL: ApproachGraph = {
       category: 'TERMINATION',
       semanticSummary: 'If L > R without finding target, target is not present; return -1.',
       expectedEvidencePatterns: ['return -1', 'left > right', 'target not in array', 'not found', 'l > r'],
+      contextualEvidencePatterns: ['return -1', 'left > right'],
       prerequisiteNodeIds: ['halve_search_space'],
     },
   ],

@@ -94,7 +94,11 @@ export function evaluateDialogueStep(
   const graph = getActiveGraph(problem?.slug, activeThread.current.approachId)
   const { model, currentInterpretation } = reconstructMentalModel(history, userText, graph, problem)
 
-  const decision = planPedagogicalAction(model, activeThread, currentInterpretation, graph)
+  const isRePrompt =
+    activeThread.current.targetNodeId === decision.targetNodeId &&
+    activeThread.current.targetEdgeId === decision.targetEdgeId &&
+    currentInterpretation.touchedNodeIds.length === 0
+
   const renderedText = renderSocraticResponse(
     decision.action,
     decision.cognitiveTask,
@@ -102,7 +106,8 @@ export function evaluateDialogueStep(
     decision.targetEdge,
     currentInterpretation,
     problem,
-    graph
+    graph,
+    isRePrompt
   )
 
   const metaComment = serializeActiveThread(decision.newThread)
