@@ -56,9 +56,12 @@ export function reconstructMentalModel(
   let model = createInitialMentalModel(graph)
   let activeThread = extractActiveThread([])
 
-  // Replay user turns through interpreter and delta applicator
-  const userTurns = history.filter((m) => m.role === 'user').map((m) => m.content)
-  for (const turn of userTurns) {
+  // Replay prior user turns through interpreter and delta applicator
+  const userMessages = history.filter((m) => m.role === 'user').map((m) => m.content)
+  const isCurrentInHistory = userMessages.length > 0 && userMessages[userMessages.length - 1] === currentText
+  const priorTurns = isCurrentInHistory ? userMessages.slice(0, -1) : userMessages
+
+  for (const turn of priorTurns) {
     const interpretation = interpretLearnerMessage(turn, problem, activeThread, graph)
     model = applyInterpretationDelta(model, interpretation, graph)
   }
@@ -104,6 +107,27 @@ export function evaluateDialogueStep(
 
   const metaComment = serializeActiveThread(decision.newThread)
   const fullResponseWithMeta = `${renderedText}\n${metaComment}`
+
+  console.log('[LITE DEBUG] TURN', {
+    userMessage: userText,
+    historyLength: history.length,
+    history: history.slice(-5).map((m) => ({ role: m.role, content: m.content.slice(0, 100) })),
+    activeThread,
+    decision: {
+      action: decision.action,
+      cognitiveTask: decision.cognitiveTask,
+      targetNodeId: decision.targetNodeId,
+      targetEdgeId: decision.targetEdgeId,
+      scoreTrace: decision.scoreTrace,
+    },
+    mentalModelNodes: Object.keys(model.nodes).map((k) => ({
+      id: k,
+      state: model.nodes[k].state,
+      confidence: model.nodes[k].confidence,
+    })),
+    renderedResponse: renderedText,
+    serializedActiveThread: metaComment,
+  })
 
   return {
     activeThread,

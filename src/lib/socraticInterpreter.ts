@@ -186,8 +186,14 @@ export function interpretLearnerMessage(
 
   for (const node of activeGraph.nodes) {
     const matchesEvidence = node.expectedEvidencePatterns.some((pattern) => {
-      const regex = new RegExp(`\\b${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
-      return regex.test(lower) || regex.test(rawText)
+      const words = pattern.trim().split(/\s+/)
+      if (words.length > 1) {
+        const regexStr = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+.*?\\s*')
+        const regex = new RegExp(`\\b${regexStr}`, 'i')
+        if (regex.test(lower) || regex.test(rawText)) return true
+      }
+      const directRegex = new RegExp(`\\b${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
+      return directRegex.test(lower) || directRegex.test(rawText)
     })
     if (matchesEvidence) {
       touchedNodeIds.push(node.id)

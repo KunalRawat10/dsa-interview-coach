@@ -146,7 +146,7 @@ export function renderSocraticResponse(
 
   // Node-specific Tasks
   if (node?.id === 'goal') {
-    return `Where would you like to start? What stands out about the inputs or what the problem is asking for?`
+    return `Looking at ${exInput}, what stands out about what the problem is asking for?`
   }
   if (node?.id === 'brute_force') {
     return `Looking at ${exInput}, if you solved this without any special data structures, how would you test all possibilities?`
