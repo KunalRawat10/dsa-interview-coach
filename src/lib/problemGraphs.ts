@@ -305,6 +305,14 @@ export const CONTAINS_DUPLICATE_CANONICAL: ApproachGraph = {
       semanticMeaning: 'Only seen elements exist in the Set, so a hit confirms duplicate.',
       expectedJustification: 'Presence in Set proves previous encounter in array.',
     },
+    {
+      id: 'lookup_to_miss',
+      from: 'membership_lookup',
+      to: 'miss_branch',
+      type: 'branches_to',
+      semanticMeaning: 'Absence from the Set means this value has not been seen before.',
+      expectedJustification: 'Not finding it in the Set proves no prior occurrence.',
+    },
   ],
 }
 

@@ -117,9 +117,15 @@ export function renderSocraticResponse(
   }
   if (edge?.id === 'lookup_to_hit') {
     if (isRePrompt) {
+      return `When you're scanning a number and it's already in the Set, what does that tell you?`
+    }
+    return `Exactly — Set lookup is constant time. When you're scanning a number and find that it's already in the Set, what does that tell us?`
+  }
+  if (edge?.id === 'lookup_to_miss') {
+    if (isRePrompt) {
       return `What should we do when the current value is NOT in the Set?`
     }
-    return `Exactly — seeing it in the Set means we've encountered that value before. What should we do when the current value is NOT in the Set?`
+    return `Right — when it's already in the Set, we found a duplicate and return true. What should we do when the current value is NOT in the Set?`
   }
 
   // Two Sum Specific Relational Bridges

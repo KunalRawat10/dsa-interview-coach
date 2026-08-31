@@ -164,7 +164,7 @@ export function planPedagogicalAction(
   }
 
   // ── 6. IMPLEMENTATION READINESS CHECK ───────────────────────────────────────
-  const operationalBranches = graph.nodes.filter((n) => n.category === 'OPERATIONAL_BRANCH' || n.category === 'TERMINATION')
+  const operationalBranches = graph.nodes.filter((n) => n.category === 'OPERATIONAL_BRANCH')
   const allBranchesGrounded =
     operationalBranches.length > 0 &&
     operationalBranches.every((n) => {
@@ -195,8 +195,9 @@ export function planPedagogicalAction(
   }
 
   // ── 7. CANDIDATE SCORING & SELECTION ───────────────────────────────────────
-  // Locality Focus: The node learner just touched, or the node coach just asked about
-  const focusNodeId = interpretation.touchedNodeIds[0] ?? currentFrame.targetNodeId ?? 'goal'
+  // Locality Focus: The primary node learner just touched, or the node coach just asked about
+  const focusNodeId = interpretation.primaryTouchedNodeId ?? interpretation.touchedNodeIds[0] ?? currentFrame.targetNodeId ?? 'goal'
+  const focusNode = graph.nodes.find((n) => n.id === focusNodeId)
   const candidates: CandidateEvaluation[] = []
 
   // A. Candidate: Fragility on current focus node
@@ -280,9 +281,30 @@ export function planPedagogicalAction(
 
     let score = 50
     if (node.id === focusNodeId) score += 40
-    // Proximity to focus node
+
+    // Proximity to focus node: direct edge adjacency
     const isAdjacent = graph.edges.some((e) => (e.from === focusNodeId && e.to === node.id) || (e.from === node.id && e.to === focusNodeId))
     if (isAdjacent) score += 30
+
+    // Shared prerequisite / sibling branch proximity (e.g. hit_branch & miss_branch)
+    const sharesPrereq =
+      focusNode &&
+      focusNode.id !== node.id &&
+      node.prerequisiteNodeIds.length > 0 &&
+      node.prerequisiteNodeIds.some((pId) => focusNode.prerequisiteNodeIds.includes(pId))
+    if (sharesPrereq) score += 25
+
+    // Prerequisite depth bonus: deeper frontier nodes are prioritized over root nodes
+    score += node.prerequisiteNodeIds.length * 10
+
+    // Downstream grounding penalty: if downstream dependent nodes are already articulated,
+    // this upstream node has been implicitly bypassed/subsumed (e.g. goal when set_structure is known)
+    const hasDownstreamGrounded = graph.edges.some(
+      (e) => e.from === node.id && (model.nodes[e.to]?.state === 'ARTICULATED' || model.nodes[e.to]?.state === 'APPLIED')
+    )
+    if (hasDownstreamGrounded) {
+      score -= 40
+    }
 
     // Task definition based on category
     let task: CognitiveTask = 'IDENTIFY'

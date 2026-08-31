@@ -10,6 +10,13 @@ import type {
 } from './problemGraphs'
 import type { ActiveThread } from './activeThread'
 
+export interface NodeMatch {
+  nodeId: string
+  score: number
+  matchedPatterns: string[]
+  isContextual: boolean
+}
+
 export interface LearnerInterpretation {
   rawText: string
   cleanedText: string
@@ -22,7 +29,9 @@ export interface LearnerInterpretation {
 
   isPassiveAgreement: boolean
 
+  primaryTouchedNodeId?: string
   touchedNodeIds: string[]
+  nodeMatches?: NodeMatch[]
   touchedEdgeIds: string[]
   contextuallyMatchedNodeIds?: string[]
 
@@ -182,10 +191,6 @@ export function interpretLearnerMessage(
   }
 
   // 4. Node & Edge Touched Matching
-  const touchedNodeIds: string[] = []
-  const touchedEdgeIds: string[] = []
-  const contextuallyMatchedNodeIds: string[] = []
-
   const normalizedLower = lower
     .replace(/['’]ve\b/g, ' have')
     .replace(/['’]d\b/g, ' would')
@@ -197,8 +202,20 @@ export function interpretLearnerMessage(
 
   const textVariants = [normalizedLower, lower, rawText]
 
-  function matchesPattern(pattern: string): boolean {
-    const words = pattern.trim().split(/\s+/)
+  interface MatchedSpan {
+    nodeId: string
+    pattern: string
+    startIndex: number
+    endIndex: number
+    wordCount: number
+    charLength: number
+    isContextual: boolean
+  }
+
+  function findSpans(pattern: string, text: string, nodeId: string, isContextual: boolean): MatchedSpan[] {
+    const words = pattern.trim().split(/\s+/).filter(Boolean)
+    if (words.length === 0) return []
+
     let regex: RegExp
     if (words.length > 1) {
       const parts = words.map((w) => {
@@ -207,58 +224,153 @@ export function interpretLearnerMessage(
         const endB = /\w$/.test(w) ? '\\b' : ''
         return `${startB}${escaped}${endB}`
       })
-      regex = new RegExp(parts.join('.*?'), 'i')
+      regex = new RegExp(parts.join('.*?'), 'gi')
     } else {
       const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       const startB = /^\w/.test(pattern) ? '\\b' : ''
       const endB = /\w$/.test(pattern) ? '\\b' : ''
-      regex = new RegExp(`${startB}${escaped}${endB}`, 'i')
+      regex = new RegExp(`${startB}${escaped}${endB}`, 'gi')
     }
-    return textVariants.some((t) => regex.test(t))
+
+    const spans: MatchedSpan[] = []
+    let m: RegExpExecArray | null
+    while ((m = regex.exec(text)) !== null) {
+      spans.push({
+        nodeId,
+        pattern,
+        startIndex: m.index,
+        endIndex: m.index + m[0].length,
+        wordCount: words.length,
+        charLength: m[0].length,
+        isContextual,
+      })
+      if (m[0].length === 0) break
+    }
+    return spans
   }
 
+  const rawSpans: MatchedSpan[] = []
+
+  // 4a. Expected evidence patterns for all graph nodes
   for (const node of activeGraph.nodes) {
-    const matchesEvidence = node.expectedEvidencePatterns.some((pattern) => matchesPattern(pattern))
-    if (matchesEvidence) {
-      touchedNodeIds.push(node.id)
+    for (const pattern of node.expectedEvidencePatterns) {
+      for (const text of textVariants) {
+        const found = findSpans(pattern, text, node.id, false)
+        rawSpans.push(...found)
+      }
     }
   }
 
   // 4b. Active-Target Contextual Evidence Matching
-  if (activeThread) {
-    const currentTargetNodeId = activeThread.current.targetNodeId
-    const currentTargetEdgeId = activeThread.current.targetEdgeId
-    const targetEdge = currentTargetEdgeId
-      ? activeGraph.edges.find((e) => e.id === currentTargetEdgeId)
-      : undefined
+  const currentTargetNodeId = activeThread?.current.targetNodeId
+  const currentTargetEdgeId = activeThread?.current.targetEdgeId
+  const targetEdge = currentTargetEdgeId
+    ? activeGraph.edges.find((e) => e.id === currentTargetEdgeId)
+    : undefined
 
-    const candidateTargetNodeIds = Array.from(
-      new Set([currentTargetNodeId, targetEdge?.to].filter(Boolean) as string[])
-    )
+  const candidateTargetNodeIds = Array.from(
+    new Set([currentTargetNodeId, targetEdge?.to].filter(Boolean) as string[])
+  )
 
-    for (const targetId of candidateTargetNodeIds) {
-      if (touchedNodeIds.includes(targetId)) continue
-      const targetNode = activeGraph.nodes.find((n) => n.id === targetId)
-      if (!targetNode?.contextualEvidencePatterns) continue
+  for (const targetId of candidateTargetNodeIds) {
+    const targetNode = activeGraph.nodes.find((n) => n.id === targetId)
+    if (!targetNode?.contextualEvidencePatterns) continue
 
-      const matchesContextual = targetNode.contextualEvidencePatterns.some((pattern) => matchesPattern(pattern))
-
-      if (matchesContextual) {
-        touchedNodeIds.push(targetNode.id)
-        contextuallyMatchedNodeIds.push(targetNode.id)
+    for (const pattern of targetNode.contextualEvidencePatterns) {
+      for (const text of textVariants) {
+        const found = findSpans(pattern, text, targetNode.id, true)
+        rawSpans.push(...found)
       }
     }
   }
 
-  // Check problem-specific examples if problem provided (e.g. arithmetic complements in Two Sum)
+  // 4c. Problem-specific examples (e.g. arithmetic complements in Two Sum)
   if (problem?.examples && problem.patternTag === 'hash-map') {
-    if (/\b(target\s*-\s*\w+|\bcomplement\b|\b\d+\s*-\s*\d+)/i.test(lower)) {
-      if (!touchedNodeIds.includes('complement_formula')) {
-        touchedNodeIds.push('complement_formula')
-      }
+    const compRegex = /\b(target\s*-\s*\w+|\bcomplement\b|\b\d+\s*-\s*\d+)/gi
+    let compMatch: RegExpExecArray | null
+    while ((compMatch = compRegex.exec(lower)) !== null) {
+      rawSpans.push({
+        nodeId: 'complement_formula',
+        pattern: compMatch[0],
+        startIndex: compMatch.index,
+        endIndex: compMatch.index + compMatch[0].length,
+        wordCount: compMatch[0].split(/\s+/).filter(Boolean).length,
+        charLength: compMatch[0].length,
+        isContextual: false,
+      })
+      if (compMatch[0].length === 0) break
     }
   }
 
+  // Deduplicate identical spans (same node, same start and end index)
+  const uniqueSpans: MatchedSpan[] = []
+  for (const span of rawSpans) {
+    const exists = uniqueSpans.some(
+      (u) =>
+        u.nodeId === span.nodeId &&
+        u.startIndex === span.startIndex &&
+        u.endIndex === span.endIndex
+    )
+    if (!exists) {
+      uniqueSpans.push(span)
+    }
+  }
+
+  // 4d. Span Subsumption: A span for node A is subsumed if a strictly longer span for node B covers it
+  const nonSubsumedSpans = uniqueSpans.filter((spanA) => {
+    return !uniqueSpans.some((spanB) => {
+      if (spanB.nodeId === spanA.nodeId) return false
+      const covers = spanB.startIndex <= spanA.startIndex && spanB.endIndex >= spanA.endIndex
+      const strictlyLonger = (spanB.endIndex - spanB.startIndex) > (spanA.endIndex - spanA.startIndex)
+      return covers && strictlyLonger
+    })
+  })
+
+  // 4e. Relevance Scoring & Ranking per Node
+  const matchedNodeIds = Array.from(new Set(nonSubsumedSpans.map((s) => s.nodeId)))
+  const nodeMatches: NodeMatch[] = []
+
+  for (const nodeId of matchedNodeIds) {
+    const spans = nonSubsumedSpans.filter((s) => s.nodeId === nodeId)
+    const isContextual = spans.some((s) => s.isContextual)
+    const matchedPatterns = Array.from(new Set(spans.map((s) => s.pattern)))
+
+    let bestPatternScore = 0
+    for (const s of spans) {
+      let score = s.wordCount * 10 + s.charLength
+      if (cleaned.toLowerCase() === s.pattern.toLowerCase()) {
+        score += 20 // exact full-match bonus
+      }
+      if (score > bestPatternScore) {
+        bestPatternScore = score
+      }
+    }
+
+    let totalScore = bestPatternScore + (spans.length - 1) * 5
+
+    // Active target relevance bonus
+    const isActiveTarget = candidateTargetNodeIds.includes(nodeId)
+    if (isActiveTarget) {
+      totalScore += isContextual ? 30 : 20
+    }
+
+    nodeMatches.push({
+      nodeId,
+      score: totalScore,
+      matchedPatterns,
+      isContextual,
+    })
+  }
+
+  // Sort nodes by match score descending
+  nodeMatches.sort((a, b) => b.score - a.score)
+
+  const touchedNodeIds = nodeMatches.map((m) => m.nodeId)
+  const primaryTouchedNodeId = touchedNodeIds[0]
+  const contextuallyMatchedNodeIds = nodeMatches.filter((m) => m.isContextual).map((m) => m.nodeId)
+
+  // 4f. Edge Touched Matching
+  const touchedEdgeIds: string[] = []
   for (const edge of activeGraph.edges) {
     if (touchedNodeIds.includes(edge.from) && touchedNodeIds.includes(edge.to)) {
       touchedEdgeIds.push(edge.id)
@@ -280,7 +392,9 @@ export function interpretLearnerMessage(
     questionTargetNodeId,
     questionContext,
     isPassiveAgreement,
+    primaryTouchedNodeId,
     touchedNodeIds,
+    nodeMatches,
     touchedEdgeIds,
     contextuallyMatchedNodeIds,
     suggestedApproachId,
