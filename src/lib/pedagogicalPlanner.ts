@@ -174,11 +174,25 @@ export function planPedagogicalAction(
 
   if (allBranchesGrounded) {
     const termNode = graph.nodes.find((n) => n.category === 'TERMINATION') ?? operationalBranches[operationalBranches.length - 1]
+    const termRecord = model.nodes[termNode.id]
+
+    // Determine if the learner has already responded to the code implementation prompt
+    const hasProvidedImplementation =
+      currentFrame.pedagogicalAction === 'OFFER_CODE_IMPLEMENTATION' ||
+      interpretation.hasCode ||
+      termRecord?.state === 'APPLIED' ||
+      termRecord?.state === 'ARTICULATED' ||
+      interpretation.touchedNodeIds.includes(termNode.id)
+
+    const isInitialOffer = !hasProvidedImplementation && currentFrame.pedagogicalAction !== 'OFFER_CODE_IMPLEMENTATION'
+
+    const cognitiveTask: CognitiveTask = isInitialOffer ? 'IMPLEMENT' : 'SUMMARIZE'
+
     const newThread: ActiveThread = {
       current: {
         approachId: graph.id,
         targetNodeId: termNode.id,
-        cognitiveTask: 'IMPLEMENT',
+        cognitiveTask,
         pedagogicalAction: 'OFFER_CODE_IMPLEMENTATION',
       },
       returnStack: thread.returnStack,
@@ -186,11 +200,13 @@ export function planPedagogicalAction(
 
     return {
       action: 'OFFER_CODE_IMPLEMENTATION',
-      cognitiveTask: 'IMPLEMENT',
+      cognitiveTask,
       targetNodeId: termNode.id,
       targetNode: termNode,
       newThread,
-      scoreTrace: 'All operational branches articulated; learner is ready for code implementation.',
+      scoreTrace: isInitialOffer
+        ? 'All operational branches articulated; learner is ready for code implementation.'
+        : 'Learner provided code implementation / summary; validating and concluding solution.',
     }
   }
 
@@ -240,14 +256,17 @@ export function planPedagogicalAction(
 
     if (!originGrounded || !prereqsMet) continue
 
-    let score = 0
-    // 1. Locality bonus
+    let score = 50
+    // 1. Locality bonus: direct connection to focus node
     if (edge.from === focusNodeId || edge.to === focusNodeId) score += 50
-    // 2. Thread continuity bonus
+    // 2. Sibling edge proximity: originates from focus node's prerequisite
+    const isSiblingEdge = focusNode && focusNode.prerequisiteNodeIds.includes(edge.from)
+    if (isSiblingEdge) score += 25
+    // 3. Thread continuity bonus
     if (edge.id === currentFrame.targetEdgeId) score += 20
-    // 3. Unclaimed edge value
+    // 4. Unclaimed edge value
     if (!edgeRecord || edgeRecord.state === 'UNCLAIMED') score += 30
-    // 4. Downstream unblocking value
+    // 5. Downstream unblocking value
     const downstreamCount = graph.edges.filter((e) => e.from === edge.to).length
     score += downstreamCount * 5
 

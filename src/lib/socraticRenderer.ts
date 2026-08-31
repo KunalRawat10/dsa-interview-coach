@@ -90,6 +90,11 @@ export function renderSocraticResponse(
 
   // ── 6. OFFER CODE IMPLEMENTATION ───────────────────────────────────────────
   if (action === 'OFFER_CODE_IMPLEMENTATION') {
+    if (cognitiveTask === 'SUMMARIZE' || cognitiveTask === 'TRACE' || isRePrompt) {
+      const timeComp = problem?.expectedTime ?? 'O(n)'
+      const spaceComp = problem?.expectedSpace ?? 'O(n)'
+      return `Excellent work! That complete implementation runs in ${timeComp} time and ${spaceComp} space, satisfying the problem constraints.`
+    }
     return `Yes — that covers the complete logic: setup, lookup on hit, insert on miss, and return on completion. Can you write the code?`
   }
 

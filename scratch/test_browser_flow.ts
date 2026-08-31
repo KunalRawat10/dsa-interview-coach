@@ -78,8 +78,51 @@ assert(
 )
 assert(turn4.thread.current.targetNodeId === 'termination', 'Turn 4 targetNodeId is termination')
 assert(turn4.thread.current.targetNodeId !== 'goal', 'Turn 4 targetNodeId never falls back to goal')
-assert(turn4.visibleReply.includes('code') || turn4.visibleReply.includes('complete logic'), 'Turn 4 asks for code')
-assert(!turn4.visibleReply.includes('What should we do when the current value is NOT in the Set?'), 'Turn 4 does NOT repeat NOT in Set question')
+assert(turn4.visibleReply.includes('Can you write the code?'), 'Turn 4 asks to write code')
+
+// Step 5: User responds with a natural-language implementation explanation
+console.log('\n--- Step 5: User provides natural-language implementation explanation ---')
+const turn5 = runTurn(
+  "I'll loop through the array, check if the number is already in the Set, return true if it is, otherwise add it to the Set. If I finish the loop, return false."
+)
+console.log('Coach reply 5:', turn5.visibleReply)
+assert(
+  !turn5.visibleReply.includes('Can you write the code?'),
+  'Step 5: Does NOT repeat "Can you write the code?" after explanation'
+)
+assert(
+  turn5.visibleReply.includes('Excellent work') || turn5.visibleReply.includes('constraints'),
+  'Step 5: Validates solution and complexity'
+)
+
+// Step 6: User provides actual C++ code
+console.log('\n--- Step 6: User provides actual C++ code ---')
+const turn6 = runTurn(`bool containsDuplicate(vector<int>& nums) {
+    unordered_set<int> seen;
+    for (int x : nums) {
+        if (seen.count(x)) return true;
+        seen.insert(x);
+    }
+    return false;
+}`)
+console.log('Coach reply 6:', turn6.visibleReply)
+assert(
+  !turn6.visibleReply.includes('Can you write the code?'),
+  'Step 6: Does NOT repeat "Can you write the code?" after code submission'
+)
+assert(
+  turn6.visibleReply.includes('Excellent work') || turn6.visibleReply.includes('constraints'),
+  'Step 6: Validates code submission'
+)
+
+// Step 7: Idempotence check (second submission)
+console.log('\n--- Step 7: Second message after completion ---')
+const turn7 = runTurn('looks good, thanks!')
+console.log('Coach reply 7:', turn7.visibleReply)
+assert(
+  !turn7.visibleReply.includes('Can you write the code?'),
+  'Step 7: No loop on subsequent messages'
+)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Flow B: User answers "then we add it to the set" directly when hit_branch was asked
