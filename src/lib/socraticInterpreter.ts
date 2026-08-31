@@ -195,17 +195,30 @@ export function interpretLearnerMessage(
     .replace(/n['’]t\b/g, ' not')
     .replace(/['’]m\b/g, ' am')
 
+  const textVariants = [normalizedLower, lower, rawText]
+
+  function matchesPattern(pattern: string): boolean {
+    const words = pattern.trim().split(/\s+/)
+    let regex: RegExp
+    if (words.length > 1) {
+      const parts = words.map((w) => {
+        const escaped = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const startB = /^\w/.test(w) ? '\\b' : ''
+        const endB = /\w$/.test(w) ? '\\b' : ''
+        return `${startB}${escaped}${endB}`
+      })
+      regex = new RegExp(parts.join('.*?'), 'i')
+    } else {
+      const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const startB = /^\w/.test(pattern) ? '\\b' : ''
+      const endB = /\w$/.test(pattern) ? '\\b' : ''
+      regex = new RegExp(`${startB}${escaped}${endB}`, 'i')
+    }
+    return textVariants.some((t) => regex.test(t))
+  }
+
   for (const node of activeGraph.nodes) {
-    const matchesEvidence = node.expectedEvidencePatterns.some((pattern) => {
-      const words = pattern.trim().split(/\s+/)
-      if (words.length > 1) {
-        const regexStr = words.map((w) => `\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).join('.*?')
-        const regex = new RegExp(regexStr, 'i')
-        if (regex.test(normalizedLower) || regex.test(lower) || regex.test(rawText)) return true
-      }
-      const directRegex = new RegExp(`\\b${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
-      return directRegex.test(normalizedLower) || directRegex.test(lower) || directRegex.test(rawText)
-    })
+    const matchesEvidence = node.expectedEvidencePatterns.some((pattern) => matchesPattern(pattern))
     if (matchesEvidence) {
       touchedNodeIds.push(node.id)
     }
@@ -228,16 +241,7 @@ export function interpretLearnerMessage(
       const targetNode = activeGraph.nodes.find((n) => n.id === targetId)
       if (!targetNode?.contextualEvidencePatterns) continue
 
-      const matchesContextual = targetNode.contextualEvidencePatterns.some((pattern) => {
-        const words = pattern.trim().split(/\s+/)
-        if (words.length > 1) {
-          const regexStr = words.map((w) => `\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).join('.*?')
-          const regex = new RegExp(regexStr, 'i')
-          if (regex.test(normalizedLower) || regex.test(lower) || regex.test(rawText)) return true
-        }
-        const directRegex = new RegExp(`\\b${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
-        return directRegex.test(normalizedLower) || directRegex.test(lower) || directRegex.test(rawText)
-      })
+      const matchesContextual = targetNode.contextualEvidencePatterns.some((pattern) => matchesPattern(pattern))
 
       if (matchesContextual) {
         touchedNodeIds.push(targetNode.id)

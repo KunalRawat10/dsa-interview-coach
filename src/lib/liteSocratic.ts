@@ -31,6 +31,8 @@ import {
   type ActiveThreadFrame,
   type MessageHistoryItem,
   extractActiveThread,
+  extractActiveThreadFromContent,
+  getDefaultActiveThread,
   serializeActiveThread,
 } from './activeThread'
 import {
@@ -42,7 +44,7 @@ import { interpretLearnerMessage, type LearnerInterpretation } from './socraticI
 import { planPedagogicalAction, type PlannerDecision } from './pedagogicalPlanner'
 import { renderSocraticResponse } from './socraticRenderer'
 
-export { extractActiveThread, serializeActiveThread }
+export { extractActiveThread, extractActiveThreadFromContent, getDefaultActiveThread, serializeActiveThread }
 export type { ActiveThread, ActiveThreadFrame, MessageHistoryItem, LearnerMentalModel }
 
 // ─── Reconstruct Mental Model From History ───────────────────────────────────
@@ -54,21 +56,50 @@ export function reconstructMentalModel(
   problem?: Problem
 ): { model: LearnerMentalModel; currentInterpretation: LearnerInterpretation } {
   let model = createInitialMentalModel(graph)
-  let activeThread = extractActiveThread([])
 
-  // Replay prior user turns through interpreter and delta applicator
-  const userMessages = history.filter((m) => m.role === 'user').map((m) => m.content)
-  const isCurrentInHistory = userMessages.length > 0 && userMessages[userMessages.length - 1] === currentText
-  const priorTurns = isCurrentInHistory ? userMessages.slice(0, -1) : userMessages
+  // Chronologically trace history and associate each user turn with the ActiveThread snapshot in effect
+  let runningThread = getDefaultActiveThread()
+  const turnsWithThread: { text: string; thread: ActiveThread }[] = []
 
+  for (const item of history) {
+    if (item.role === 'assistant') {
+      const parsedThread = extractActiveThreadFromContent(item.content)
+      if (parsedThread) {
+        runningThread = parsedThread
+      }
+    } else if (item.role === 'user') {
+      turnsWithThread.push({
+        text: item.content,
+        thread: runningThread,
+      })
+    }
+  }
+
+  // Determine whether currentText is already recorded as the last user turn in history
+  const isCurrentInHistory =
+    history.length > 0 &&
+    history[history.length - 1].role === 'user' &&
+    history[history.length - 1].content === currentText
+
+  let priorTurns: { text: string; thread: ActiveThread }[]
+  let currentTurnThread: ActiveThread
+
+  if (isCurrentInHistory) {
+    priorTurns = turnsWithThread.slice(0, -1)
+    currentTurnThread = turnsWithThread[turnsWithThread.length - 1]?.thread ?? runningThread
+  } else {
+    priorTurns = turnsWithThread
+    currentTurnThread = runningThread
+  }
+
+  // Replay prior user turns with their respective historical ActiveThreads
   for (const turn of priorTurns) {
-    const interpretation = interpretLearnerMessage(turn, problem, activeThread, graph)
+    const interpretation = interpretLearnerMessage(turn.text, problem, turn.thread, graph)
     model = applyInterpretationDelta(model, interpretation, graph)
   }
 
-  // Interpret current turn
-  activeThread = extractActiveThread(history)
-  const currentInterpretation = interpretLearnerMessage(currentText, problem, activeThread, graph)
+  // Interpret current turn using its corresponding ActiveThread
+  const currentInterpretation = interpretLearnerMessage(currentText, problem, currentTurnThread, graph)
   model = applyInterpretationDelta(model, currentInterpretation, graph)
 
   return { model, currentInterpretation }

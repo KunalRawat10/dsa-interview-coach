@@ -86,7 +86,7 @@ Constraints: ${problem.constraints.join(', ')}
 
 ---
 Where would you like to start? What stands out about the inputs or what the problem is asking for?
-<!--lite:{"approachId":"canonical","targetNodeId":"goal","cognitiveTask":"IDENTIFY","pedagogicalAction":"DEEPEN_PARTIAL_REASONING","returnStack":[]}-->`,
+<!--lite:{"current":{"approachId":"canonical","targetNodeId":"goal","cognitiveTask":"IDENTIFY","pedagogicalAction":"DEEPEN_PARTIAL_REASONING"},"returnStack":[]}-->`,
   }
 }
 
