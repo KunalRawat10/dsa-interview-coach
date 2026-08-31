@@ -40,7 +40,11 @@ import {
   createInitialMentalModel,
   applyInterpretationDelta,
 } from './mentalModel'
-import { interpretLearnerMessage, type LearnerInterpretation } from './socraticInterpreter'
+import {
+  interpretLearnerMessage,
+  interpretLearnerMessageAsync,
+  type LearnerInterpretation,
+} from './socraticInterpreter'
 import { planPedagogicalAction, type PlannerDecision } from './pedagogicalPlanner'
 import { renderSocraticResponse } from './socraticRenderer'
 
@@ -210,7 +214,7 @@ export function evaluateLearnerState(
   }
 }
 
-// ─── Public API ──────────────────────────────────────────────────────────────
+// ─── Public Synchronous API (Instant, Non-Blocking Lite Mode) ────────────────
 
 export function liteRespond(
   userText: string,
@@ -218,5 +222,108 @@ export function liteRespond(
   history: MessageHistoryItem[] = []
 ): string {
   const step = evaluateDialogueStep(userText, problem, history)
+  return step.fullResponseWithMeta
+}
+
+// ─── Public Asynchronous API (Semantic Embedding Layer) ──────────────────────
+
+export async function reconstructMentalModelAsync(
+  history: MessageHistoryItem[],
+  currentText: string,
+  graph: ApproachGraph,
+  problem?: Problem
+): Promise<{ model: LearnerMentalModel; currentInterpretation: LearnerInterpretation }> {
+  let model = createInitialMentalModel(graph)
+
+  let runningThread = getDefaultActiveThread()
+  const turnsWithThread: { text: string; thread: ActiveThread }[] = []
+
+  for (const item of history) {
+    if (item.role === 'assistant') {
+      const parsedThread = extractActiveThreadFromContent(item.content)
+      if (parsedThread) {
+        runningThread = parsedThread
+      }
+    } else if (item.role === 'user') {
+      turnsWithThread.push({
+        text: item.content,
+        thread: runningThread,
+      })
+    }
+  }
+
+  const isCurrentInHistory =
+    history.length > 0 &&
+    history[history.length - 1].role === 'user' &&
+    history[history.length - 1].content === currentText
+
+  let priorTurns: { text: string; thread: ActiveThread }[]
+  let currentTurnThread: ActiveThread
+
+  if (isCurrentInHistory) {
+    priorTurns = turnsWithThread.slice(0, -1)
+    currentTurnThread = turnsWithThread[turnsWithThread.length - 1]?.thread ?? runningThread
+  } else {
+    priorTurns = turnsWithThread
+    currentTurnThread = runningThread
+  }
+
+  for (const turn of priorTurns) {
+    const interpretation = await interpretLearnerMessageAsync(turn.text, problem, turn.thread, graph)
+    model = applyInterpretationDelta(model, interpretation, graph)
+  }
+
+  const currentInterpretation = await interpretLearnerMessageAsync(currentText, problem, currentTurnThread, graph)
+  model = applyInterpretationDelta(model, currentInterpretation, graph)
+
+  return { model, currentInterpretation }
+}
+
+export async function evaluateDialogueStepAsync(
+  userText: string,
+  problem?: Problem,
+  history: MessageHistoryItem[] = []
+): Promise<SocraticEvaluationTrace> {
+  const activeThread = extractActiveThread(history)
+  const graph = getActiveGraph(problem?.slug, activeThread.current.approachId)
+  const { model, currentInterpretation } = await reconstructMentalModelAsync(history, userText, graph, problem)
+
+  const decision = planPedagogicalAction(model, activeThread, currentInterpretation, graph)
+
+  const isRePrompt =
+    activeThread.current.targetNodeId === decision.targetNodeId &&
+    activeThread.current.targetEdgeId === decision.targetEdgeId &&
+    currentInterpretation.touchedNodeIds.length === 0
+
+  const renderedText = renderSocraticResponse(
+    decision.action,
+    decision.cognitiveTask,
+    decision.targetNode,
+    decision.targetEdge,
+    currentInterpretation,
+    problem,
+    graph,
+    isRePrompt
+  )
+
+  const metaComment = serializeActiveThread(decision.newThread)
+  const fullResponseWithMeta = `${renderedText}\n${metaComment}`
+
+  return {
+    activeThread,
+    interpretation: currentInterpretation,
+    mentalModel: model,
+    decision,
+    renderedText,
+    fullResponseWithMeta,
+  }
+}
+
+export async function liteRespondAsync(
+  userText: string,
+  problem?: Problem,
+  history: MessageHistoryItem[] = []
+): Promise<string> {
+  const step = await evaluateDialogueStepAsync(userText, problem, history)
   return step.fullResponseWithMeta
 }

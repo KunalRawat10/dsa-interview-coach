@@ -3,12 +3,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { Problem } from '../data/problems'
-import type {
-  ApproachGraph,
-  EpistemicConfidence,
-  MisconceptionType,
+import {
+  type ApproachGraph,
+  type EpistemicConfidence,
+  type MisconceptionType,
+  getActiveGraph,
 } from './problemGraphs'
 import type { ActiveThread } from './activeThread'
+import { type SemanticMatch, matchSemanticConcepts } from './semanticMatcher'
 
 export interface NodeMatch {
   nodeId: string
@@ -405,4 +407,77 @@ export function interpretLearnerMessage(
     correctionContent,
     claimedFact: cleaned,
   }
+}
+
+export function applySemanticMatches(
+  baseInterpretation: LearnerInterpretation,
+  semanticMatches: SemanticMatch[],
+  activeGraph: ApproachGraph
+): LearnerInterpretation {
+  // Question / interruption priority: do not graft concept matches onto questions
+  if (baseInterpretation.isQuestion) {
+    return baseInterpretation
+  }
+
+  const updatedNodeMatches = [...(baseInterpretation.nodeMatches ?? [])]
+  const updatedTouchedNodeIds = [...baseInterpretation.touchedNodeIds]
+  const updatedTouchedEdgeIds = [...baseInterpretation.touchedEdgeIds]
+
+  for (const match of semanticMatches) {
+    if (match.conceptType === 'NODE') {
+      const nodeExists = activeGraph.nodes.some((n) => n.id === match.conceptId)
+      if (!nodeExists) continue
+
+      if (!updatedTouchedNodeIds.includes(match.conceptId)) {
+        updatedTouchedNodeIds.push(match.conceptId)
+        updatedNodeMatches.push({
+          nodeId: match.conceptId,
+          score: Math.round(match.score * 50),
+          matchedPatterns: [`semantic:${match.prototypeId}`],
+          isContextual: false,
+        })
+      }
+    } else if (match.conceptType === 'EDGE') {
+      const edgeExists = activeGraph.edges.some((e) => e.id === match.conceptId)
+      if (!edgeExists) continue
+
+      if (!updatedTouchedEdgeIds.includes(match.conceptId)) {
+        updatedTouchedEdgeIds.push(match.conceptId)
+      }
+    }
+  }
+
+  updatedNodeMatches.sort((a, b) => b.score - a.score)
+  const primaryTouchedNodeId = updatedNodeMatches[0]?.nodeId ?? updatedTouchedNodeIds[0]
+
+  return {
+    ...baseInterpretation,
+    primaryTouchedNodeId,
+    touchedNodeIds: updatedTouchedNodeIds,
+    nodeMatches: updatedNodeMatches,
+    touchedEdgeIds: updatedTouchedEdgeIds,
+  }
+}
+
+export async function interpretLearnerMessageAsync(
+  rawText: string,
+  problem?: Problem,
+  activeThread?: ActiveThread,
+  graph?: ApproachGraph
+): Promise<LearnerInterpretation> {
+  const activeGraph = graph ?? getActiveGraph(problem?.slug, activeThread?.current.approachId)
+  const baseInterpretation = interpretLearnerMessage(rawText, problem, activeThread, activeGraph)
+
+  if (baseInterpretation.isQuestion) {
+    return baseInterpretation
+  }
+
+  const semanticMatches = await matchSemanticConcepts(
+    rawText,
+    activeThread?.current.targetNodeId,
+    activeThread?.current.targetEdgeId,
+    problem?.slug
+  )
+
+  return applySemanticMatches(baseInterpretation, semanticMatches, activeGraph)
 }

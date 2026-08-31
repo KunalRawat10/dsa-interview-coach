@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, memo } from 'react'
 import type { MLCEngine, ChatCompletionMessageParam } from '@mlc-ai/web-llm'
-import { liteRespond } from '../lib/liteSocratic'
+import { liteRespond, liteRespondAsync } from '../lib/liteSocratic'
 import { useProgress } from '../hooks/useProgress'
 import { retrieveForQuery } from '../lib/retrieval'
 import {
@@ -766,27 +766,33 @@ export default function WebLLMChat({
     })
 
     if (mode !== 'ai' || !engineRef.current) {
-      // Lite Mode: instant, rule-based Socratic Pedagogical State Engine
-      const base = liteRespond(userMsg.content, problemRef.current, nextMessages)
+      // Lite Mode: Hybrid Socratic Pedagogical State Engine (Tier 1 Exact + Tier 2 Semantic)
+      let base: string
+      try {
+        base = await liteRespondAsync(userMsg.content, problemRef.current, nextMessages)
+      } catch (err) {
+        console.warn('Semantic Socratic engine failed, falling back to rule-based path:', err)
+        base = liteRespond(userMsg.content, problemRef.current, nextMessages)
+      }
+
       const reply =
         retrieved.length > 0
           ? `From your notes ("${retrieved[0].chunk.sourceTitle}"): "${retrieved[0].chunk.text.slice(0, 160)}${
               retrieved[0].chunk.text.length > 160 ? '…' : ''
             }"\n\n${base}`
           : base
-      setTimeout(() => {
-        const finalMessages = [...nextMessages, { role: 'assistant' as const, content: reply }]
-        messagesRef.current = finalMessages
-        setMessages(finalMessages)
-        const { history: savedHistory } = persistActiveSession({
-          sessionId: sessionIdRef.current,
-          problemId: problemRef.current?.id,
-          problemTitle: problemRef.current?.title,
-          messages: finalMessages,
-        })
-        setHistory(savedHistory)
-        setIsThinking(false)
-      }, 300)
+
+      const finalMessages = [...nextMessages, { role: 'assistant' as const, content: reply }]
+      messagesRef.current = finalMessages
+      setMessages(finalMessages)
+      const { history: savedHistory } = persistActiveSession({
+        sessionId: sessionIdRef.current,
+        problemId: problemRef.current?.id,
+        problemTitle: problemRef.current?.title,
+        messages: finalMessages,
+      })
+      setHistory(savedHistory)
+      setIsThinking(false)
       return
     }
 

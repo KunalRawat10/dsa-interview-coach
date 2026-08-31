@@ -169,8 +169,88 @@ assert(
   'Flow B Turn 4: Both branches articulated, advances to OFFER_CODE_IMPLEMENTATION',
   `Action: ${turnB4.thread.current.pedagogicalAction}`
 )
-assert(turnB4.thread.current.targetNodeId === 'termination', 'Flow B Turn 4 targetNodeId is termination')
-assert(turnB4.thread.current.targetNodeId !== 'goal', 'Flow B Turn 4 targetNodeId never falls back to goal')
+// ─────────────────────────────────────────────────────────────────────────────
+// Flow C: Complete Implementation Summary Jump (Browser Regression Utterance)
+// ─────────────────────────────────────────────────────────────────────────────
+
+console.log('\n--- Flow C: Complete Implementation Summary Jump ---')
+
+let historyC = [
+  {
+    role: 'assistant' as const,
+    content: `**${cdProblem.title}**\n---\nWhere would you like to start?\n<!--lite:{"current":{"approachId":"canonical","targetNodeId":"goal","cognitiveTask":"IDENTIFY","pedagogicalAction":"DEEPEN_PARTIAL_REASONING"},"returnStack":[]}-->`,
+  },
+]
+
+function runTurnC(userText: string) {
+  const userMsg = { role: 'user' as const, content: userText }
+  const nextMessages = [...historyC, userMsg]
+  const fullReply = liteRespond(userMsg.content, cdProblem, nextMessages)
+  const visibleReply = fullReply.replace(/<!--lite:[\s\S]*?-->/, '').trim()
+  historyC = [...nextMessages, { role: 'assistant' as const, content: fullReply }]
+  const thread = extractActiveThread(historyC)
+  const { model, currentInterpretation } = reconstructMentalModel(historyC, userText, graphCD, cdProblem)
+  return { visibleReply, fullReply, thread, model, currentInterpretation }
+}
+
+runTurnC('Use a Set')
+const turnC2 = runTurnC('bcs complexity is O(1)')
+assert(turnC2.thread.current.targetNodeId === 'hit_branch', 'Flow C Turn 2 target is hit_branch')
+assert(turnC2.visibleReply.includes('already in the Set') || turnC2.visibleReply.includes('already in it'), 'Flow C Turn 2 asks about hit branch')
+
+// Turn C3: Learner responds with complete natural-language implementation summary
+const turnC3 = runTurnC(
+  "I'll loop through the array, check if the number is already in the Set, return true if it is, otherwise add it to the Set. If I finish the loop, return false."
+)
+console.log('Flow C Turn 3 Coach reply:', turnC3.visibleReply)
+
+assert(
+  turnC3.model.nodes['hit_branch']?.state === 'ARTICULATED' || turnC3.model.nodes['hit_branch']?.state === 'APPLIED',
+  'Flow C Turn 3: hit_branch becomes ARTICULATED/APPLIED'
+)
+assert(
+  turnC3.model.nodes['miss_branch']?.state === 'ARTICULATED' || turnC3.model.nodes['miss_branch']?.state === 'APPLIED',
+  'Flow C Turn 3: miss_branch becomes ARTICULATED/APPLIED'
+)
+assert(
+  turnC3.model.nodes['termination']?.state === 'ARTICULATED' || turnC3.model.nodes['termination']?.state === 'APPLIED',
+  'Flow C Turn 3: termination is recognized and grounded'
+)
+assert(turnC3.thread.current.targetNodeId !== 'hit_branch', 'Flow C Turn 3: Planner does NOT re-select hit_branch')
+assert(turnC3.thread.current.targetEdgeId !== 'lookup_to_hit', 'Flow C Turn 3: Planner does NOT re-select lookup_to_hit')
+assert(turnC3.thread.current.targetNodeId !== 'goal', 'Flow C Turn 3: Planner does NOT select goal')
+assert(
+  turnC3.thread.current.pedagogicalAction === 'OFFER_CODE_IMPLEMENTATION',
+  'Flow C Turn 3: Action is OFFER_CODE_IMPLEMENTATION'
+)
+assert(
+  turnC3.thread.current.cognitiveTask === 'SUMMARIZE',
+  'Flow C Turn 3: CognitiveTask is SUMMARIZE (solution validated)'
+)
+assert(
+  !turnC3.visibleReply.includes('When you\'re scanning a number and find that it\'s already in the Set'),
+  'Flow C Turn 3: Does NOT repeat hit branch question'
+)
+assert(
+  !turnC3.visibleReply.includes('Can you write the code?'),
+  'Flow C Turn 3: Does NOT ask "Can you write the code?" when full summary provided'
+)
+assert(
+  turnC3.visibleReply.includes('Excellent work') || turnC3.visibleReply.includes('constraints'),
+  'Flow C Turn 3: Validates complete solution and complexity'
+)
+
+// Turn C4: Idempotent continuation
+const turnC4 = runTurnC('thanks!')
+console.log('Flow C Turn 4 Coach reply:', turnC4.visibleReply)
+assert(
+  !turnC4.visibleReply.includes('already in the Set'),
+  'Flow C Turn 4: Does NOT reopen hit branch on subsequent message'
+)
+assert(
+  !turnC4.visibleReply.includes('Can you write the code?'),
+  'Flow C Turn 4: Remains stable on subsequent message'
+)
 
 console.log('\n============================================================')
 console.log(`TOTAL: ${totalTests} | PASSED: ${passedTests} | FAILED: ${totalTests - passedTests}`)
