@@ -930,7 +930,7 @@ export const BINARY_SEARCH_CANONICAL: ApproachGraph = {
     {
       id: 'midpoint_comparison',
       label: 'Midpoint Halving Decision',
-      category: 'INVARIANT_MECHANISM',
+      category: 'OPTIMIZATION_STRATEGY',
       semanticSummary: 'Calculate mid = L + Math.floor((R - L) / 2). If nums[mid] === target, return mid.',
       expectedEvidencePatterns: ['check middle', 'nums[mid]', 'midpoint', 'compare with middle', 'look at the middle', 'middle element', 'middle', 'mid = left + (right - left) / 2', 'calculate midpoint', 'midpoint mid'],
       contextualEvidencePatterns: ['the middle', 'middle element', 'mid point', 'middle number', 'element at mid'],

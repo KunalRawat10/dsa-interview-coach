@@ -120,12 +120,12 @@ export function applyInterpretationDelta(
 
   // Causal/relational evidence detection helpers
   const hasCausalConnective =
-    /\b(because|so\s+that|so\s+we\s+(don'?t|can)|avoids?|instead\s+of|prevents?|eliminates|since|due\s+to|in\s+order\s+to|means\s+that|tells\s+us\s+that|proves|why|before\s+\w+|after\s+\w+|without\s+(having\s+to\s+|needing\s+to\s+)?(scan|loop|check|re-scan|search|look)|if\s+.*\b(then|means|is|we\s+found|return))\b/i.test(
+    /\b(because|bcs|bc|so\s+that|so\s+we\s+(?:don'?t|can)|so|in\s+order\s+to|prevents?|avoids?|allows?|enables?|since|due\s+to|as\s+a\s+result|therefore|thus|instead\s+of|eliminates|means\s+that|tells\s+us\s+that|proves|why|before\s+\w+|after\s+\w+|without\s+(?:having\s+to\s+|needing\s+to\s+)?(?:scan|loop|check|re-scan|search|look)|if\s+.*\b(?:then|means|is|we\s+found|return))\b/i.test(
       interpretation.rawText
     )
 
   const hasComplexityOrAvoidance =
-    /\b(without\s+scanning|without\s+checking|without\s+looping|rescan|rescanning|from\s+scratch|quadratic|o\(n\^?2?\)|o\(1\)|constant\s+time|fast\s+lookup|instant\s+lookup|already\s+seen|seen\s+before|encountered\s+earlier|previous(ly)?\s+seen|already\s+there|already\s+in)\b/i.test(
+    /\b(without\s+(?:scanning|checking|looping|searching|looking)|re[-\s]*scan(?:ning)?|from\s+scratch|quadratic|constant[-\s]+time|fast[-\s]+lookup|instant[-\s]+lookup|already\s+(?:seen|recorded|visited|saved|stored|present|there|in|encountered)|previous(?:ly)?\s+(?:seen|recorded|visited|saved|stored|encountered|present)|(?:seen|recorded|visited|saved|stored|encountered)\s+(?:before|earlier|previously|already))\b|\b(?:o\s*\(\s*(?:1|n\^?2|n²|n|log\s*n|n\s*log\s*n)\s*\))(?!\w)/i.test(
       interpretation.rawText
     )
 
@@ -211,7 +211,9 @@ export function applyInterpretationDelta(
       const touchesBothNodes =
         interpretation.touchedNodeIds.includes(edge.from) && interpretation.touchedNodeIds.includes(edge.to)
       const hasCausalConnective =
-        /\b(because|so that|so we don't|avoids?|instead of|prevents?|since|due to)\b/i.test(interpretation.rawText)
+        /\b(because|bcs|bc|so\s+that|so\s+we\s+(?:don'?t|can)|so|in\s+order\s+to|prevents?|avoids?|allows?|enables?|since|due\s+to|as\s+a\s+result|therefore|thus|instead\s+of|eliminates)\b/i.test(
+          interpretation.rawText
+        )
       const edgeState: EdgeUnderstandingState = touchesBothNodes || hasCausalConnective ? 'JUSTIFIED' : 'CLAIMED'
 
       nextModel.edges[edge.id] = {

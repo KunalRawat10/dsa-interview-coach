@@ -231,24 +231,152 @@ async function runAllTests() {
   assert(step2.interpretation.touchedNodeIds.includes('membership_lookup'), 'H2. Turn 2: Semantic paraphrase grounds membership_lookup')
   assert(step2.decision.targetNodeId === 'hit_branch', 'H2. Turn 2: Planner advances to hit_branch')
 
-  // Complete implementation jump in natural language
-  const step3 = await evaluateDialogueStepAsync(
-    "I'll loop through the array, check if the number is already in the Set, return true if it is, otherwise add it to the Set. If I finish the loop, return false.",
+  // ─────────────────────────────────────────────────────────────────────────
+  // I. Complete Multi-Concept Simultaneous Grounding Regression Test
+  // ─────────────────────────────────────────────────────────────────────────
+  console.log('\n--- TEST I: Multi-Concept Simultaneous Grounding ---')
+
+  const fullUtterance =
+    "I'll loop through the array, check if the number is already in the Set, return true if it is, otherwise add it to the Set. If I finish the loop, return false."
+
+  const interpI = await interpretLearnerMessageAsync(fullUtterance, cdProblem, threadHit, graphCD)
+  assert(interpI.touchedNodeIds.includes('membership_lookup'), 'I1. membership_lookup is grounded')
+  assert(interpI.touchedNodeIds.includes('hit_branch'), 'I2. hit_branch is grounded')
+  assert(interpI.touchedNodeIds.includes('miss_branch'), 'I3. miss_branch is grounded')
+  assert(interpI.touchedNodeIds.includes('termination'), 'I4. termination is grounded')
+
+  // Step evaluation with mental model and planner
+  const stepI = await evaluateDialogueStepAsync(fullUtterance, cdProblem, history2)
+  assert(
+    stepI.mentalModel.nodes['membership_lookup']?.state === 'ARTICULATED' ||
+      stepI.mentalModel.nodes['membership_lookup']?.state === 'APPLIED',
+    'I5. Mental model: membership_lookup is ARTICULATED/APPLIED'
+  )
+  assert(
+    stepI.mentalModel.nodes['hit_branch']?.state === 'ARTICULATED' ||
+      stepI.mentalModel.nodes['hit_branch']?.state === 'APPLIED',
+    'I6. Mental model: hit_branch is ARTICULATED/APPLIED'
+  )
+  assert(
+    stepI.mentalModel.nodes['miss_branch']?.state === 'ARTICULATED' ||
+      stepI.mentalModel.nodes['miss_branch']?.state === 'APPLIED',
+    'I7. Mental model: miss_branch is ARTICULATED/APPLIED'
+  )
+  assert(
+    stepI.mentalModel.nodes['termination']?.state === 'ARTICULATED' ||
+      stepI.mentalModel.nodes['termination']?.state === 'APPLIED',
+    'I8. Mental model: termination is ARTICULATED/APPLIED'
+  )
+  assert(stepI.decision.targetNodeId !== 'hit_branch', 'I9. Planner does NOT select hit_branch as an unresolved target')
+  assert(stepI.decision.targetEdgeId !== 'lookup_to_hit', 'I10. Planner does NOT select lookup_to_hit')
+  assert(
+    stepI.decision.action === 'OFFER_CODE_IMPLEMENTATION',
+    'I11. Planner reaches OFFER_CODE_IMPLEMENTATION'
+  )
+  assert(
+    stepI.decision.cognitiveTask === 'SUMMARIZE',
+    'I12. Planner sets cognitiveTask to SUMMARIZE'
+  )
+  assert(
+    !stepI.renderedText.includes('Can you write the code?'),
+    'I13. No "Can you write the code?" repetition when full summary is provided'
+  )
+  assert(
+    stepI.renderedText.includes('Excellent work') || stepI.renderedText.includes('constraints'),
+    'I14. Output validates solution completeness'
+  )
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // J. Opening Discovery Context & Negative Controls Suite
+  // ─────────────────────────────────────────────────────────────────────────
+  console.log('\n--- TEST J: Opening Discovery Context & Negative Controls ---')
+
+  const openingThread = {
+    current: {
+      approachId: 'canonical',
+      targetNodeId: 'goal',
+      cognitiveTask: 'IDENTIFY' as const,
+      pedagogicalAction: 'DEEPEN_PARTIAL_REASONING' as const,
+    },
+    returnStack: [],
+  }
+
+  // J1. Exact Live Opening Utterance
+  const liveUtterance = "I'd keep the values we've encountered somewhere so we can check them quickly."
+  const interpJ1 = await interpretLearnerMessageAsync(liveUtterance, cdProblem, openingThread, graphCD)
+  assert(interpJ1.touchedNodeIds.includes('memory'), 'J1. Opening Discovery: "keep values encountered" grounds memory')
+  assert(interpJ1.touchedEdgeIds.length === 0, 'J1. Opening Discovery: does NOT claim edges automatically')
+
+  const initialOpeningHistory = [
+    {
+      role: 'assistant' as const,
+      content: `**${cdProblem.title}**\n---\nWhere would you like to start?\n<!--lite:{"current":{"approachId":"canonical","targetNodeId":"goal","cognitiveTask":"IDENTIFY","pedagogicalAction":"DEEPEN_PARTIAL_REASONING"},"returnStack":[]}-->`,
+    },
+  ]
+
+  const stepJ1 = await evaluateDialogueStepAsync(liveUtterance, cdProblem, initialOpeningHistory)
+  assert(stepJ1.mentalModel.nodes['memory']?.state === 'ARTICULATED', 'J1. Opening: mental model marks memory as ARTICULATED')
+  assert(stepJ1.decision.targetNodeId !== 'goal', 'J1. Opening: planner advances away from goal')
+  assert(stepJ1.decision.targetNodeId === 'set_structure', 'J1. Opening: planner advances to set_structure')
+  assert(
+    stepJ1.decision.action === 'PROBE_ADJACENT_RELATIONSHIP',
+    'J1. Opening: planner selects PROBE_ADJACENT_RELATIONSHIP'
+  )
+
+  // J2. Opening Positive Paraphrases
+  const interpJ2a = await interpretLearnerMessageAsync(
+    'store those values in a collection that supports fast membership checks',
     cdProblem,
-    history2
+    openingThread,
+    graphCD
   )
-  assert(
-    step3.decision.action === 'OFFER_CODE_IMPLEMENTATION',
-    'H3. Turn 3: Complete summary jump triggers OFFER_CODE_IMPLEMENTATION'
+  assert(interpJ2a.touchedNodeIds.includes('set_structure'), 'J2a. Opening Paraphrase: grounds set_structure')
+
+  const interpJ2b = await interpretLearnerMessageAsync(
+    'compare every number against all other elements',
+    cdProblem,
+    openingThread,
+    graphCD
   )
-  assert(
-    step3.decision.cognitiveTask === 'SUMMARIZE',
-    'H3. Turn 3: CognitiveTask is SUMMARIZE'
+  assert(interpJ2b.touchedNodeIds.includes('brute_force'), 'J2b. Opening Paraphrase: grounds brute_force')
+
+  const interpJ2c = await interpretLearnerMessageAsync(
+    'we repeatedly rescan earlier elements and perform pairwise checks',
+    cdProblem,
+    openingThread,
+    graphCD
   )
-  assert(
-    step3.renderedText.includes('Excellent work') || step3.renderedText.includes('constraints'),
-    'H3. Turn 3: Output validates solution'
+  assert(interpJ2c.touchedNodeIds.includes('repeated_work'), 'J2c. Opening Paraphrase: grounds repeated_work')
+
+  // J3. Opening Negative Controls
+  const interpJ3a = await interpretLearnerMessageAsync(
+    "I've been thinking about what to eat for dinner.",
+    cdProblem,
+    openingThread,
+    graphCD
   )
+  assert(interpJ3a.touchedNodeIds.length === 0, 'J3a. Opening Negative Control: dinner sentence grounds 0 nodes')
+
+  const interpJ3b = await interpretLearnerMessageAsync(
+    'The problem is confusing.',
+    cdProblem,
+    openingThread,
+    graphCD
+  )
+  assert(interpJ3b.touchedNodeIds.length === 0, 'J3b. Opening Negative Control: confusing sentence grounds 0 nodes')
+
+  const interpJ3c = await interpretLearnerMessageAsync(
+    'I like playing soccer on weekends.',
+    cdProblem,
+    openingThread,
+    graphCD
+  )
+  assert(interpJ3c.touchedNodeIds.length === 0, 'J3c. Opening Negative Control: soccer sentence grounds 0 nodes')
+
+  // J4. Strict Edge Invariant at Opening
+  const stepJ4 = await evaluateDialogueStepAsync('use a Set', cdProblem, initialOpeningHistory)
+  assert(stepJ4.mentalModel.nodes['set_structure']?.state === 'ARTICULATED', 'J4. Invariant: set_structure grounded')
+  assert(stepJ4.mentalModel.edges['memory_to_set']?.state === 'UNCLAIMED', 'J4. Invariant: memory_to_set remains UNCLAIMED')
 
   console.log('\n============================================================')
   console.log(`TOTAL: ${totalTests} | PASSED: ${passedTests} | FAILED: ${totalTests - passedTests}`)

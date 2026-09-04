@@ -72,13 +72,20 @@ console.log('\n--- Step 4: User answers miss branch: "then we add it to the set"
 const turn4 = runTurn('then we add it to the set')
 console.log('Coach reply 4:', turn4.visibleReply)
 assert(
-  turn4.thread.current.pedagogicalAction === 'OFFER_CODE_IMPLEMENTATION',
-  'Turn 4 advances to OFFER_CODE_IMPLEMENTATION',
+  turn4.thread.current.targetNodeId === 'termination',
+  'Turn 4 targetNodeId is termination',
+  `Got: ${turn4.thread.current.targetNodeId}`
+)
+assert(
+  turn4.thread.current.pedagogicalAction === 'DEEPEN_PARTIAL_REASONING',
+  'Turn 4 probes termination condition before OFFER_CODE_IMPLEMENTATION',
   `Action: ${turn4.thread.current.pedagogicalAction}`
 )
-assert(turn4.thread.current.targetNodeId === 'termination', 'Turn 4 targetNodeId is termination')
 assert(turn4.thread.current.targetNodeId !== 'goal', 'Turn 4 targetNodeId never falls back to goal')
-assert(turn4.visibleReply.includes('Can you write the code?'), 'Turn 4 asks to write code')
+assert(
+  turn4.visibleReply.includes('reach the end') || turn4.visibleReply.includes('end of the array') || turn4.visibleReply.includes('without finding'),
+  'Turn 4 asks what to return at the end of the array'
+)
 
 // Step 5: User responds with a natural-language implementation explanation
 console.log('\n--- Step 5: User provides natural-language implementation explanation ---')
@@ -165,9 +172,22 @@ assert(
 const turnB4 = runTurnB('return true')
 console.log('Flow B Coach reply 4:', turnB4.visibleReply)
 assert(
-  turnB4.thread.current.pedagogicalAction === 'OFFER_CODE_IMPLEMENTATION',
-  'Flow B Turn 4: Both branches articulated, advances to OFFER_CODE_IMPLEMENTATION',
+  turnB4.thread.current.targetNodeId === 'termination',
+  'Flow B Turn 4: Both branches articulated, advances to termination probe',
+  `Got: ${turnB4.thread.current.targetNodeId}`
+)
+assert(
+  turnB4.thread.current.pedagogicalAction === 'DEEPEN_PARTIAL_REASONING',
+  'Flow B Turn 4: Probes termination condition before OFFER_CODE_IMPLEMENTATION',
   `Action: ${turnB4.thread.current.pedagogicalAction}`
+)
+
+const turnB5 = runTurnB('If we reach the end without finding duplicates, return false.')
+console.log('Flow B Coach reply 5:', turnB5.visibleReply)
+assert(
+  turnB5.thread.current.pedagogicalAction === 'OFFER_CODE_IMPLEMENTATION',
+  'Flow B Turn 5: Termination articulated, advances to OFFER_CODE_IMPLEMENTATION',
+  `Action: ${turnB5.thread.current.pedagogicalAction}`
 )
 // ─────────────────────────────────────────────────────────────────────────────
 // Flow C: Complete Implementation Summary Jump (Browser Regression Utterance)

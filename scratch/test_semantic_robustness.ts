@@ -575,6 +575,111 @@ async function runSemanticRobustnessSuite() {
     '9.E Edge decoupling: memory_to_set remains UNCLAIMED on recognition alone'
   )
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // 10. ASYMPTOTIC COMPLEXITY & CAUSAL CONNECTIVE REGRESSION
+  // ─────────────────────────────────────────────────────────────────────────
+  console.log('\n--- 10. Asymptotic Complexity & Causal Connective Regressions ---')
+
+  const lookupNode = graphCD.nodes.find((n) => n.id === 'membership_lookup')!
+  const rwNode10 = graphCD.nodes.find((n) => n.id === 'repeated_work')!
+
+  // 10.A Asymptotic matching cases demonstrating causal relationships
+  const complexityCases = [
+    { text: 'bcs complexity is O(1)', targetNode: 'membership_lookup', nodeDef: lookupNode },
+    { text: 'because lookup takes O(1) time', targetNode: 'membership_lookup', nodeDef: lookupNode },
+    { text: 'nested loop takes O(n^2) time so we should optimize it', targetNode: 'repeated_work', nodeDef: rwNode10 },
+    { text: 'quadratic scan is O(n²) which causes repeated work', targetNode: 'repeated_work', nodeDef: rwNode10 },
+    { text: 'linear scan takes O(n) work without a hash table', targetNode: 'repeated_work', nodeDef: rwNode10 },
+    { text: 'so that search runs in O(log n) time', targetNode: 'membership_lookup', nodeDef: lookupNode },
+  ]
+
+  for (let i = 0; i < complexityCases.length; i++) {
+    const cCase = complexityCases[i]
+    const interpCase = await interpretLearnerMessageAsync(cCase.text, cdProblem, defaultThread, graphCD)
+    interpCase.touchedNodeIds = [cCase.targetNode]
+    const modelCase = applyInterpretationDelta(createInitialMentalModel(graphCD), interpCase, graphCD)
+    const rec = modelCase.nodes[cCase.targetNode]
+    assert(
+      rec !== undefined && rec.causalUnderstanding >= 0.5,
+      `10.A${i + 1}. Asymptotic causal credit: "${cCase.text}" -> causalUnderstanding >= 0.5 (got ${rec?.causalUnderstanding})`
+    )
+    assert(
+      isNodeGrounded(rec, cCase.nodeDef),
+      `10.A${i + 1}. Node ${cCase.targetNode} is grounded with asymptotic explanation`
+    )
+  }
+
+  // 10.B Causal connective forms: bcs, bc, because, so that, in order to, prevents, avoids, allows, enables, since, due to, as a result, therefore, thus
+  const connectiveForms = [
+    'bcs it avoids nested scanning',
+    'bc it avoids rescanning the array',
+    'because it prevents duplicate checks',
+    'so that we do not recheck numbers',
+    'in order to avoid quadratic comparisons',
+    'prevents rescanning from scratch',
+    'avoids quadratic lookup work',
+    'allows instant lookup without scanning',
+    'enables fast check without looping',
+    'since it avoids repeating the scan',
+    'due to avoiding repeated comparisons',
+    'as a result we avoid quadratic time',
+    'therefore it eliminates quadratic rescanning',
+    'thus avoiding quadratic checks',
+  ]
+
+  for (let i = 0; i < connectiveForms.length; i++) {
+    const cText = connectiveForms[i]
+    const interpC = await interpretLearnerMessageAsync(cText, cdProblem, defaultThread, graphCD)
+    interpC.touchedNodeIds = ['membership_lookup']
+    const modelConn = applyInterpretationDelta(createInitialMentalModel(graphCD), interpC, graphCD)
+    const recConn = modelConn.nodes['membership_lookup']
+    assert(
+      recConn !== undefined && recConn.causalUnderstanding >= 0.5,
+      `10.B${i + 1}. Causal connective: "${cText}" -> causalUnderstanding >= 0.5 (got ${recConn?.causalUnderstanding})`
+    )
+    assert(
+      isNodeGrounded(recConn, lookupNode),
+      `10.B${i + 1}. membership_lookup is grounded via "${cText}"`
+    )
+  }
+
+  // 10.C Compound adjectives and state-tracking paraphrases
+  const stateTrackingCases = [
+    { text: 'constant-time lookup', targetNode: 'membership_lookup', nodeDef: lookupNode },
+    { text: 'check whether this value was already recorded', targetNode: 'membership_lookup', nodeDef: lookupNode },
+    { text: 'fast-lookup without scanning again', targetNode: 'membership_lookup', nodeDef: lookupNode },
+    { text: 'value was previously saved in the collection', targetNode: 'membership_lookup', nodeDef: lookupNode },
+  ]
+
+  for (let i = 0; i < stateTrackingCases.length; i++) {
+    const sCase = stateTrackingCases[i]
+    const interpS = await interpretLearnerMessageAsync(sCase.text, cdProblem, defaultThread, graphCD)
+    interpS.touchedNodeIds = [sCase.targetNode]
+    const modelS = applyInterpretationDelta(createInitialMentalModel(graphCD), interpS, graphCD)
+    const recS = modelS.nodes[sCase.targetNode]
+    assert(
+      recS !== undefined && recS.causalUnderstanding >= 0.5,
+      `10.C${i + 1}. State-tracking causal credit: "${sCase.text}" -> causalUnderstanding >= 0.5 (got ${recS?.causalUnderstanding})`
+    )
+    assert(
+      isNodeGrounded(recS, sCase.nodeDef),
+      `10.C${i + 1}. ${sCase.targetNode} is grounded via "${sCase.text}"`
+    )
+  }
+
+  // 10.D Binary Search midpoint_comparison grounding
+  const bsProblem = PROBLEMS.find((p) => p.slug === 'binary-search')!
+  const bsGraph = getActiveGraph('binary-search')
+  const bsMidNode = bsGraph.nodes.find((n) => n.id === 'midpoint_comparison')!
+  const interpBS = await interpretLearnerMessageAsync('the middle', bsProblem, defaultThread, bsGraph)
+  interpBS.touchedNodeIds = ['midpoint_comparison']
+  const modelBS = applyInterpretationDelta(createInitialMentalModel(bsGraph), interpBS, bsGraph)
+  const recBS = modelBS.nodes['midpoint_comparison']
+  assert(
+    isNodeGrounded(recBS, bsMidNode),
+    '10.D. Binary Search midpoint_comparison is grounded via "the middle"'
+  )
+
   console.log('\n============================================================')
   console.log(`TOTAL: ${totalTests} | PASSED: ${passedTests} | FAILED: ${totalTests - passedTests}`)
   console.log('============================================================')
