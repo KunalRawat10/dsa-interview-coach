@@ -132,9 +132,9 @@ export function evaluateDialogueStep(
   const decision = planPedagogicalAction(model, activeThread, currentInterpretation, graph)
 
   const isRePrompt =
+    Boolean(activeThread.current.targetNodeId) &&
     activeThread.current.targetNodeId === decision.targetNodeId &&
-    activeThread.current.targetEdgeId === decision.targetEdgeId &&
-    currentInterpretation.touchedNodeIds.length === 0
+    activeThread.current.targetEdgeId === decision.targetEdgeId
 
   const renderedText = renderSocraticResponse(
     decision.action,
@@ -293,9 +293,9 @@ export async function evaluateDialogueStepAsync(
   const decision = planPedagogicalAction(model, activeThread, currentInterpretation, graph)
 
   const isRePrompt =
+    Boolean(activeThread.current.targetNodeId) &&
     activeThread.current.targetNodeId === decision.targetNodeId &&
-    activeThread.current.targetEdgeId === decision.targetEdgeId &&
-    currentInterpretation.touchedNodeIds.length === 0
+    activeThread.current.targetEdgeId === decision.targetEdgeId
 
   const renderedText = renderSocraticResponse(
     decision.action,

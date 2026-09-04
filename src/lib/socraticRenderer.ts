@@ -85,7 +85,7 @@ export function renderSocraticResponse(
 
   // ── 5. EXPLORE ALTERNATIVE APPROACH ────────────────────────────────────────
   if (action === 'EXPLORE_ALTERNATIVE_APPROACH') {
-    return `Yes. Sorting would put equal values next to each other, so you could check adjacent elements. What tradeoff does sorting introduce compared with remembering values in a Set?`
+    return `Sorting is a valid direction. Once the array is sorted, can you find a way to avoid comparing every pair?`
   }
 
   // ── 6. OFFER CODE IMPLEMENTATION ───────────────────────────────────────────

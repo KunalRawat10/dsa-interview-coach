@@ -256,6 +256,7 @@ export const CONTAINS_DUPLICATE_CANONICAL: ApproachGraph = {
       expectedEvidencePatterns: [
         'check if in set',
         'already there',
+        'already present',
         'contains',
         'membership',
         'ask whether',

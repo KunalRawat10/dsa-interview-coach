@@ -709,6 +709,138 @@ async function runSemanticRobustnessSuite() {
     '11.4 Includes valid alternative strategies'
   )
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // 12. PHASE E — ADVERSARIAL VALIDATION REGRESSION COVERAGE
+  // ─────────────────────────────────────────────────────────────────────────
+  console.log('\n--- 12. Phase E: Adversarial Validation Regressions ---')
+
+  // Test A: Upstream-node repetition while targeting set_structure
+  const historyA = [
+    {
+      role: 'assistant' as const,
+      content:
+        'Where to start? <!--lite:{"current":{"approachId":"canonical","targetNodeId":"set_structure","targetEdgeId":"memory_to_set","cognitiveTask":"IDENTIFY","pedagogicalAction":"PROBE_ADJACENT_RELATIONSHIP"},"returnStack":[]}-->',
+    },
+  ]
+  const stepA = await evaluateDialogueStepAsync("That way I can remember what I've already seen.", cdProblem, historyA)
+  assert(stepA.decision.targetNodeId === 'set_structure', '12.A. Target remains set_structure')
+  assert(stepA.decision.targetEdgeId === 'memory_to_set', '12.A. Target edge remains memory_to_set')
+  assert(
+    !stepA.renderedText.includes("Yes — that's the important shift"),
+    '12.A. Re-prompt does NOT replay first-time transition praise ("Yes — that\'s the important shift")'
+  )
+  assert(
+    stepA.renderedText.includes('What kind of structure gives us instant constant-time lookups') ||
+      stepA.renderedText.includes('What kind of structure'),
+    '12.A. Re-prompt uses concise direct probe'
+  )
+
+  // Test B: Upstream mechanism repetition while targeting hit_branch
+  const historyB = [
+    {
+      role: 'assistant' as const,
+      content:
+        'Next? <!--lite:{"current":{"approachId":"canonical","targetNodeId":"hit_branch","targetEdgeId":"lookup_to_hit","cognitiveTask":"APPLY","pedagogicalAction":"PROBE_ADJACENT_RELATIONSHIP"},"returnStack":[]}-->',
+    },
+  ]
+  const stepB = await evaluateDialogueStepAsync(
+    "So I can check if I've already seen the number without scanning everything.",
+    cdProblem,
+    historyB
+  )
+  assert(stepB.decision.targetNodeId === 'hit_branch', '12.B. Target remains hit_branch')
+  assert(stepB.decision.targetEdgeId === 'lookup_to_hit', '12.B. Target edge remains lookup_to_hit')
+  assert(
+    !stepB.renderedText.includes('Exactly — Set lookup is constant time'),
+    '12.B. Re-prompt does NOT replay first-time praise ("Exactly — Set lookup is constant time")'
+  )
+  assert(
+    stepB.renderedText.includes("When you're scanning a number and it's already in the Set, what does that tell you?"),
+    '12.B. Re-prompt uses concise direct branch probe'
+  )
+
+  // Test C: Sorting + pairwise comparison
+  const stepC = await evaluateDialogueStepAsync(
+    "I'll sort the array first, then compare every pair of numbers.",
+    cdProblem,
+    historyA
+  )
+  assert(stepC.decision.action === 'EXPLORE_ALTERNATIVE_APPROACH', '12.C. Alternative approach recognized')
+  assert(
+    !stepC.renderedText.includes('check adjacent elements') && !stepC.renderedText.includes('adjacent elements'),
+    '12.C. Response does NOT claim learner proposed adjacent comparison'
+  )
+  assert(
+    stepC.renderedText.includes('avoid comparing every pair'),
+    '12.C. Response probes how sorting avoids all-pairs comparison'
+  )
+
+  // Test D: Compound Set / lookup statement
+  const stepD = await evaluateDialogueStepAsync(
+    "I'd use a Set because checking whether a value is already present is constant time, so I don't need to scan all the previous values again.",
+    cdProblem,
+    historyA
+  )
+  assert(stepD.mentalModel.nodes['set_structure']?.state === 'ARTICULATED', '12.D. set_structure is recognized')
+  assert(
+    stepD.mentalModel.nodes['membership_lookup']?.state === 'ARTICULATED',
+    '12.D. membership_lookup is recognized'
+  )
+  assert(
+    !stepD.mentalModel.edges['lookup_to_hit'] || stepD.mentalModel.edges['lookup_to_hit'].state === 'UNCLAIMED',
+    '12.D. No false edge invented merely from node evidence'
+  )
+  assert(
+    stepD.decision.targetNodeId === 'hit_branch',
+    '12.D. Planner advances appropriately toward hit_branch'
+  )
+  assert(
+    stepD.decision.targetEdgeId === 'lookup_to_hit',
+    '12.D. Planner targets unresolved downstream edge lookup_to_hit'
+  )
+  assert(
+    stepD.decision.action === 'PROBE_ADJACENT_RELATIONSHIP',
+    '12.D. Planner probes adjacent relationship toward next frontier'
+  )
+
+  // Test E: General Principle — Compound utterance grounding upstream and downstream nodes in one turn
+  // A compound utterance that grounds an upstream node and its immediate downstream node in one turn
+  // must not cause the planner to re-probe the upstream->downstream relationship when the destination is already grounded.
+  const historyE = [
+    {
+      role: 'assistant' as const,
+      content:
+        'How could we optimize this? <!--lite:{"current":{"approachId":"canonical","targetNodeId":"set_structure","targetEdgeId":"memory_to_set","cognitiveTask":"IDENTIFY","pedagogicalAction":"PROBE_ADJACENT_RELATIONSHIP"},"returnStack":[]}-->',
+    },
+  ]
+  const stepE = await evaluateDialogueStepAsync(
+    "Instead of quadratic rescanning, we could store seen numbers in a Hash Set and check membership in O(1) time.",
+    cdProblem,
+    historyE
+  )
+  assert(stepE.mentalModel.nodes['set_structure']?.state === 'ARTICULATED', '12.E. Upstream node set_structure grounded')
+  assert(stepE.mentalModel.nodes['membership_lookup']?.state === 'ARTICULATED', '12.E. Downstream node membership_lookup grounded')
+  assert(
+    !stepE.mentalModel.edges['set_to_lookup'] || stepE.mentalModel.edges['set_to_lookup'].state === 'UNCLAIMED',
+    '12.E. Upstream->downstream edge set_to_lookup NOT falsely grounded'
+  )
+  assert(
+    !stepE.mentalModel.edges['lookup_to_hit'] || stepE.mentalModel.edges['lookup_to_hit'].state === 'UNCLAIMED',
+    '12.E. Next edge lookup_to_hit NOT falsely grounded'
+  )
+  assert(
+    stepE.decision.targetNodeId === 'hit_branch',
+    '12.E. Planner chooses the next unresolved downstream frontier node (hit_branch)'
+  )
+  assert(
+    stepE.decision.targetEdgeId === 'lookup_to_hit',
+    '12.E. Planner chooses the next unresolved downstream edge (lookup_to_hit)'
+  )
+  assert(
+    !stepE.renderedText.includes('avoid repeatedly searching through the array'),
+    '12.E. Planner does NOT re-probe already-answered upstream relationship (set_to_lookup)'
+  )
+
   console.log('\n============================================================')
   console.log(`TOTAL: ${totalTests} | PASSED: ${passedTests} | FAILED: ${totalTests - passedTests}`)
   console.log('============================================================')

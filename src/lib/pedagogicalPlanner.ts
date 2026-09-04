@@ -218,8 +218,40 @@ export function planPedagogicalAction(
   }
 
   // ── 7. CANDIDATE SCORING & SELECTION ───────────────────────────────────────
-  // Locality Focus: The primary node learner just touched, or the node coach just asked about
-  const focusNodeId = interpretation.primaryTouchedNodeId ?? interpretation.touchedNodeIds[0] ?? currentFrame.targetNodeId ?? 'goal'
+  // Locality Focus: If multiple nodes are touched and grounded, prefer the furthest downstream
+  // grounded touched node that has an unresolved downstream successor/edge.
+  // Otherwise fallback to primaryTouchedNodeId, first touched node, target node, or 'goal'.
+  let selectedFocusNodeId: string | undefined
+
+  if (interpretation.touchedNodeIds.length > 1) {
+    const groundedTouchedNodes = interpretation.touchedNodeIds
+      .map((id) => graph.nodes.find((n) => n.id === id))
+      .filter((n): n is ConceptNode => Boolean(n && isNodeGrounded(model.nodes[n.id], n)))
+
+    const frontierGroundedNodes = groundedTouchedNodes.filter((n) => {
+      // Must have at least one unresolved downstream edge or successor
+      const hasUnresolvedDownstreamEdge = graph.edges.some((e) => {
+        if (e.from !== n.id) return false
+        const destNode = graph.nodes.find((x) => x.id === e.to)
+        const isDestUnresolved = !destNode || !isNodeGrounded(model.nodes[destNode.id], destNode)
+        const isEdgeUnclaimed = !model.edges[e.id] || model.edges[e.id].state === 'UNCLAIMED'
+        return isDestUnresolved || isEdgeUnclaimed
+      })
+      return hasUnresolvedDownstreamEdge
+    })
+
+    if (frontierGroundedNodes.length > 0) {
+      // Pick the node furthest along the graph's topological ordering position
+      frontierGroundedNodes.sort(
+        (a, b) =>
+          graph.nodes.findIndex((x) => x.id === b.id) -
+          graph.nodes.findIndex((x) => x.id === a.id)
+      )
+      selectedFocusNodeId = frontierGroundedNodes[0].id
+    }
+  }
+
+  const focusNodeId = selectedFocusNodeId ?? interpretation.primaryTouchedNodeId ?? interpretation.touchedNodeIds[0] ?? currentFrame.targetNodeId ?? 'goal'
   const focusNode = graph.nodes.find((n) => n.id === focusNodeId)
   const candidates: CandidateEvaluation[] = []
 
