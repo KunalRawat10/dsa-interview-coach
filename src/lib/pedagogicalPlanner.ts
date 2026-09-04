@@ -9,7 +9,7 @@ import type {
   ConceptNode,
   ConceptEdge,
 } from './problemGraphs'
-import type { LearnerMentalModel } from './mentalModel'
+import { type LearnerMentalModel, isNodeGrounded, isNodeCausal } from './mentalModel'
 import type { ActiveThread } from './activeThread'
 import type { LearnerInterpretation } from './socraticInterpreter'
 
@@ -165,15 +165,20 @@ export function planPedagogicalAction(
 
   // ── 6. IMPLEMENTATION READINESS CHECK ───────────────────────────────────────
   const operationalBranches = graph.nodes.filter((n) => n.category === 'OPERATIONAL_BRANCH')
+  const terminationNodes = graph.nodes.filter((n) => n.category === 'TERMINATION')
+
   const allBranchesGrounded =
     operationalBranches.length > 0 &&
-    operationalBranches.every((n) => {
-      const rec = model.nodes[n.id]
-      return rec && (rec.state === 'ARTICULATED' || rec.state === 'APPLIED')
-    })
+    operationalBranches.every((n) => isNodeGrounded(model.nodes[n.id], n))
 
-  if (allBranchesGrounded) {
-    const termNode = graph.nodes.find((n) => n.category === 'TERMINATION') ?? operationalBranches[operationalBranches.length - 1]
+  const allTerminationGrounded =
+    terminationNodes.length === 0 ||
+    terminationNodes.every((n) => isNodeGrounded(model.nodes[n.id], n))
+
+  const isImplementationReady = allBranchesGrounded && allTerminationGrounded
+
+  if (isImplementationReady) {
+    const termNode = terminationNodes[0] ?? operationalBranches[operationalBranches.length - 1]
     const termRecord = model.nodes[termNode.id]
 
     // Determine if the learner has already responded to the code implementation prompt
@@ -198,15 +203,17 @@ export function planPedagogicalAction(
       returnStack: thread.returnStack,
     }
 
+    const completionReason = isInitialOffer
+      ? 'All operational branches articulated; learner is ready for code implementation.'
+      : 'Learner provided code implementation / summary; validating and concluding solution.'
+
     return {
       action: 'OFFER_CODE_IMPLEMENTATION',
       cognitiveTask,
       targetNodeId: termNode.id,
       targetNode: termNode,
       newThread,
-      scoreTrace: isInitialOffer
-        ? 'All operational branches articulated; learner is ready for code implementation.'
-        : 'Learner provided code implementation / summary; validating and concluding solution.',
+      scoreTrace: completionReason,
     }
   }
 
@@ -228,8 +235,10 @@ export function planPedagogicalAction(
     })
   }
 
-  // B. Candidate: Deepening named-only focus node
-  if (focusRecord && focusRecord.state === 'NAMED') {
+  // B. Candidate: Deepening named-only or ungrounded causal focus node
+  const focusNeedsCausal = focusNode && isNodeCausal(focusNode)
+  const focusLacksCausal = focusNeedsCausal && ((focusRecord?.causalUnderstanding ?? 0) < 0.5)
+  if (focusRecord && (focusRecord.state === 'NAMED' || focusLacksCausal)) {
     candidates.push({
       nodeId: focusNodeId,
       cognitiveTask: 'JUSTIFY',
@@ -243,14 +252,16 @@ export function planPedagogicalAction(
   for (const edge of graph.edges) {
     const edgeRecord = model.edges[edge.id]
     const fromRecord = model.nodes[edge.from]
+    const fromNode = graph.nodes.find((n) => n.id === edge.from)
     const toNode = graph.nodes.find((n) => n.id === edge.to)
 
     // Prerequisites check: origin must be articulated and destination prereqs met
-    const originGrounded = fromRecord && (fromRecord.state === 'ARTICULATED' || fromRecord.state === 'APPLIED')
+    const originGrounded = fromRecord && isNodeGrounded(fromRecord, fromNode)
     const prereqsMet = toNode
       ? toNode.prerequisiteNodeIds.every((pId) => {
           const rec = model.nodes[pId]
-          return rec && (rec.state === 'ARTICULATED' || rec.state === 'APPLIED')
+          const pNode = graph.nodes.find((n) => n.id === pId)
+          return rec && isNodeGrounded(rec, pNode)
         })
       : true
 
@@ -260,7 +271,7 @@ export function planPedagogicalAction(
     // 1. Locality bonus: direct connection to focus node
     if (edge.from === focusNodeId || edge.to === focusNodeId) score += 50
     // 2. Sibling edge proximity: originates from focus node's prerequisite
-    const isSiblingEdge = focusNode && focusNode.prerequisiteNodeIds.includes(edge.from)
+    const isSiblingEdge = focusNode && edge.to !== focusNodeId && focusNode.prerequisiteNodeIds.includes(edge.from)
     if (isSiblingEdge) score += 25
     // 3. Thread continuity bonus
     if (edge.id === currentFrame.targetEdgeId) score += 20
@@ -272,7 +283,7 @@ export function planPedagogicalAction(
 
     // Penalty if destination node is already articulated/applied
     const destRecord = model.nodes[edge.to]
-    if (destRecord && (destRecord.state === 'ARTICULATED' || destRecord.state === 'APPLIED')) {
+    if (destRecord && isNodeGrounded(destRecord, toNode)) {
       score -= 60
     }
 
@@ -289,12 +300,13 @@ export function planPedagogicalAction(
   // D. Candidate: Unarticulated Prerequisite-Ready Nodes
   for (const node of graph.nodes) {
     const nodeRecord = model.nodes[node.id]
-    const isUnresolved = !nodeRecord || nodeRecord.state === 'UNKNOWN' || nodeRecord.state === 'NAMED'
+    const isUnresolved = !isNodeGrounded(nodeRecord, node)
     if (!isUnresolved) continue
 
     const prereqsMet = node.prerequisiteNodeIds.every((pId) => {
       const rec = model.nodes[pId]
-      return rec && (rec.state === 'ARTICULATED' || rec.state === 'APPLIED')
+      const pNode = graph.nodes.find((n) => n.id === pId)
+      return rec && isNodeGrounded(rec, pNode)
     })
     if (!prereqsMet) continue
 
@@ -313,13 +325,20 @@ export function planPedagogicalAction(
       node.prerequisiteNodeIds.some((pId) => focusNode.prerequisiteNodeIds.includes(pId))
     if (sharesPrereq) score += 25
 
+    // Progression bonus: the focus node directly satisfies a prerequisite for this downstream node
+    const isDirectPrereqSuccessor = node.prerequisiteNodeIds.includes(focusNodeId)
+    if (isDirectPrereqSuccessor) score += 35
+
     // Prerequisite depth bonus: deeper frontier nodes are prioritized over root nodes
     score += node.prerequisiteNodeIds.length * 10
 
     // Downstream grounding penalty: if downstream dependent nodes are already articulated,
     // this upstream node has been implicitly bypassed/subsumed (e.g. goal when set_structure is known)
     const hasDownstreamGrounded = graph.edges.some(
-      (e) => e.from === node.id && (model.nodes[e.to]?.state === 'ARTICULATED' || model.nodes[e.to]?.state === 'APPLIED')
+      (e) => {
+        const destNode = graph.nodes.find((n) => n.id === e.to)
+        return e.from === node.id && isNodeGrounded(model.nodes[e.to], destNode)
+      }
     )
     if (hasDownstreamGrounded) {
       score -= 40

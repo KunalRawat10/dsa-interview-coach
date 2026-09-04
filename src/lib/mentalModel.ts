@@ -15,6 +15,8 @@ export interface NodeStateRecord {
   state: NodeUnderstandingState
   confidence: EpistemicConfidence
   evidence: string[]
+  recognition: number // 0..1: concept mentioned / recognized
+  causalUnderstanding: number // 0..1: understands why/how it works or avoids redundant work
 }
 
 export interface EdgeStateRecord {
@@ -30,6 +32,29 @@ export interface LearnerMentalModel {
   activeMisconceptions: MisconceptionType[]
 }
 
+export function isNodeCausal(node: { category: string }): boolean {
+  return node.category === 'BOTTLENECK' || node.category === 'INVARIANT_MECHANISM'
+}
+
+export function isNodeGrounded(record: NodeStateRecord | undefined, node?: { category: string }): boolean {
+  if (!record) return false
+  if (record.state === 'APPLIED') return true
+  if (record.state === 'UNKNOWN') return false
+
+  const requiresCausal = node ? isNodeCausal(node) : false
+  if (requiresCausal) {
+    if (record.recognition !== undefined && record.causalUnderstanding !== undefined) {
+      return record.recognition >= 0.7 && record.causalUnderstanding >= 0.5
+    }
+    return record.state === 'ARTICULATED'
+  }
+
+  if (record.recognition !== undefined) {
+    return record.recognition >= 0.7
+  }
+  return record.state === 'ARTICULATED'
+}
+
 export function createInitialMentalModel(graph: ApproachGraph): LearnerMentalModel {
   const nodes: Record<string, NodeStateRecord> = {}
   const edges: Record<string, EdgeStateRecord> = {}
@@ -39,6 +64,8 @@ export function createInitialMentalModel(graph: ApproachGraph): LearnerMentalMod
       state: 'UNKNOWN',
       confidence: 'SOLID',
       evidence: [],
+      recognition: 0,
+      causalUnderstanding: 0,
     }
   }
 
@@ -84,30 +111,96 @@ export function applyInterpretationDelta(
         state: existing ? (existing.state === 'UNKNOWN' ? 'NAMED' : existing.state) : 'NAMED',
         confidence: 'FRAGILE',
         evidence: [...(existing?.evidence ?? []), interpretation.rawText],
+        recognition: Math.min(Math.max(existing?.recognition ?? 0, 0.4), 0.4),
+        causalUnderstanding: 0,
       }
     }
     return nextModel
   }
 
+  // Causal/relational evidence detection helpers
+  const hasCausalConnective =
+    /\b(because|so\s+that|so\s+we\s+(don'?t|can)|avoids?|instead\s+of|prevents?|eliminates|since|due\s+to|in\s+order\s+to|means\s+that|tells\s+us\s+that|proves|why|before\s+\w+|after\s+\w+|without\s+(having\s+to\s+|needing\s+to\s+)?(scan|loop|check|re-scan|search|look)|if\s+.*\b(then|means|is|we\s+found|return))\b/i.test(
+      interpretation.rawText
+    )
+
+  const hasComplexityOrAvoidance =
+    /\b(without\s+scanning|without\s+checking|without\s+looping|rescan|rescanning|from\s+scratch|quadratic|o\(n\^?2?\)|o\(1\)|constant\s+time|fast\s+lookup|instant\s+lookup|already\s+seen|seen\s+before|encountered\s+earlier|previous(ly)?\s+seen|already\s+there|already\s+in)\b/i.test(
+      interpretation.rawText
+    )
+
   // 3. Update Touched Nodes
   for (const nodeId of interpretation.touchedNodeIds) {
     const existing = nextModel.nodes[nodeId]
+    const node = graph.nodes.find((n) => n.id === nodeId)
     const wordCount = interpretation.cleanedText.split(/\s+/).length
     const isContextual = interpretation.contextuallyMatchedNodeIds?.includes(nodeId)
     const isSingleWordOutOfContext = wordCount <= 1 && !isContextual && !interpretation.hasCode
 
-    let newState: NodeUnderstandingState = 'ARTICULATED'
-    if (isSingleWordOutOfContext && existing?.state !== 'ARTICULATED') {
-      newState = 'NAMED'
+    // Dimension 1: Recognition (0..1)
+    let newRecognition = 1.0
+    if (isSingleWordOutOfContext && (existing?.recognition ?? 0) < 0.5) {
+      newRecognition = 0.5
     }
+    const recognition = Math.max(existing?.recognition ?? 0, newRecognition)
+
+    // Dimension 2: Causal Understanding (0..1)
+    const adjacentNodeIds = graph.edges
+      .filter((e) => e.from === nodeId || e.to === nodeId)
+      .map((e) => (e.from === nodeId ? e.to : e.from))
+    const touchesAdjacentNode = adjacentNodeIds.some((adjId) => interpretation.touchedNodeIds.includes(adjId))
+    const touchesIncidentEdge = interpretation.touchedEdgeIds.some((eId) => {
+      const e = graph.edges.find((x) => x.id === eId)
+      return e && (e.from === nodeId || e.to === nodeId)
+    })
+
+    let calculatedCausal = 0.0
+    if (touchesIncidentEdge) {
+      calculatedCausal = hasCausalConnective ? 1.0 : 0.9
+    } else if (hasCausalConnective && (touchesAdjacentNode || hasComplexityOrAvoidance)) {
+      calculatedCausal = 0.95
+    } else if (hasCausalConnective) {
+      calculatedCausal = 0.85
+    } else if (hasComplexityOrAvoidance) {
+      calculatedCausal = 0.75
+    } else if (touchesAdjacentNode) {
+      calculatedCausal = 0.2
+    }
+
+    const causalUnderstanding = Math.max(existing?.causalUnderstanding ?? 0, calculatedCausal)
+
+    // Derived Backward-Compatible NodeUnderstandingState
+    const requiresCausal = node ? isNodeCausal(node) : false
+    let newState: NodeUnderstandingState = 'UNKNOWN'
+
     if (interpretation.hasCode) {
       newState = 'APPLIED'
+    } else if (isSingleWordOutOfContext && existing?.state !== 'ARTICULATED') {
+      newState = 'NAMED'
+    } else if (requiresCausal) {
+      if (recognition >= 0.7 && causalUnderstanding >= 0.5) {
+        newState = 'ARTICULATED'
+      } else if (recognition >= 0.4) {
+        newState = 'NAMED'
+      } else {
+        newState = existing?.state ?? 'UNKNOWN'
+      }
+    } else {
+      if (recognition >= 0.7) {
+        newState = 'ARTICULATED'
+      } else if (recognition >= 0.4) {
+        newState = 'NAMED'
+      } else {
+        newState = existing?.state ?? 'UNKNOWN'
+      }
     }
 
     nextModel.nodes[nodeId] = {
       state: newState,
       confidence: interpretation.confidence,
       evidence: [...(existing?.evidence ?? []), interpretation.rawText],
+      recognition,
+      causalUnderstanding,
     }
   }
 

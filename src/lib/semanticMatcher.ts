@@ -75,8 +75,13 @@ export async function matchSemanticConcepts(
       item.prototype.conceptId === activeTargetNodeId ||
       item.prototype.conceptId === activeTargetEdgeId
 
+    const isOpeningDiscovery =
+      activeTargetNodeId === 'goal' && item.prototype.conceptType === 'NODE'
+
     const threshold = isActiveTarget
       ? SEMANTIC_THRESHOLDS.activeTarget
+      : isOpeningDiscovery
+      ? SEMANTIC_THRESHOLDS.openingDiscovery
       : item.prototype.conceptType === 'EDGE'
       ? SEMANTIC_THRESHOLDS.edgeJustification
       : SEMANTIC_THRESHOLDS.global

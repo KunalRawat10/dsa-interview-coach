@@ -166,6 +166,8 @@ export function evaluateDialogueStep(
       id: k,
       state: model.nodes[k].state,
       confidence: model.nodes[k].confidence,
+      recognition: model.nodes[k].recognition,
+      causalUnderstanding: model.nodes[k].causalUnderstanding,
     })),
     renderedResponse: renderedText,
     serializedActiveThread: metaComment,

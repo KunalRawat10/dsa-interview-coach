@@ -150,7 +150,8 @@ export function interpretLearnerMessage(
   // 2. Learner Question / Interrupt Identification
   const isQuestion =
     /^\s*why\s*\??\s*$/i.test(rawText) ||
-    /\b(why (is|do we need|are we|not|does)|how does|can't we use|what if|what does o\(1\)|what happens with)\b/i.test(lower)
+    /\b(why (is|do we need|are we|not|does)|how does|can't we use|what if|what does|what is|what are|what happens with)\b/i.test(lower) ||
+    (/\?$/.test(rawText.trim()) && /^(what|why|how|can|could|is|does)\b/i.test(cleaned))
 
   let questionTargetNodeId: string | undefined
   let questionContext: string | undefined
@@ -219,14 +220,19 @@ export function interpretLearnerMessage(
     if (words.length === 0) return []
 
     let regex: RegExp
-    if (words.length > 1) {
+    if (pattern.startsWith('^') && pattern.endsWith('$')) {
+      const core = pattern.slice(1, -1).trim()
+      const escaped = core.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      regex = new RegExp(`^\\s*(?:(?:then|we|so|i|it)\\s+)?${escaped}[.!]?\\s*$`, 'gi')
+    } else if (words.length > 1) {
       const parts = words.map((w) => {
         const escaped = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
         const startB = /^\w/.test(w) ? '\\b' : ''
         const endB = /\w$/.test(w) ? '\\b' : ''
         return `${startB}${escaped}${endB}`
       })
-      regex = new RegExp(parts.join('.*?'), 'gi')
+      // Allow up to 3 intervening words within the same clause (never across punctuation [,.;!?\n])
+      regex = new RegExp(parts.join('(?:\\s+[^,.;!?\\s]+){0,3}\\s+'), 'gi')
     } else {
       const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       const startB = /^\w/.test(pattern) ? '\\b' : ''
@@ -246,7 +252,7 @@ export function interpretLearnerMessage(
         charLength: m[0].length,
         isContextual,
       })
-      if (m[0].length === 0) break
+      if (m[0].length === 0 || pattern.startsWith('^')) break
     }
     return spans
   }
@@ -318,10 +324,15 @@ export function interpretLearnerMessage(
     }
   }
 
-  // 4d. Span Subsumption: A span for node A is subsumed if a strictly longer span for node B covers it
+  // 4d. Span Subsumption: A span for node A is subsumed if a strictly longer span for node B covers it.
+  // Rule: A longer match from an unrelated/non-active node must NOT erase a match belonging to the active target.
   const nonSubsumedSpans = uniqueSpans.filter((spanA) => {
+    const isSpanAActiveTarget = candidateTargetNodeIds.includes(spanA.nodeId)
     return !uniqueSpans.some((spanB) => {
       if (spanB.nodeId === spanA.nodeId) return false
+      const isSpanBActiveTarget = candidateTargetNodeIds.includes(spanB.nodeId)
+      if (isSpanAActiveTarget && !isSpanBActiveTarget) return false
+
       const covers = spanB.startIndex <= spanA.startIndex && spanB.endIndex >= spanA.endIndex
       const strictlyLonger = (spanB.endIndex - spanB.startIndex) > (spanA.endIndex - spanA.startIndex)
       return covers && strictlyLonger
@@ -371,11 +382,17 @@ export function interpretLearnerMessage(
   const primaryTouchedNodeId = touchedNodeIds[0]
   const contextuallyMatchedNodeIds = nodeMatches.filter((m) => m.isContextual).map((m) => m.nodeId)
 
-  // 4f. Edge Touched Matching
+  // 4f. Edge Touched Matching — explicit relational/contextual evidence
+  // Co-mentioning Node A and Node B MUST NOT automatically justify Edge A->B.
+  // An edge is only touched if it is the active target edge being probed, both endpoints are touched,
+  // and the utterance contains an explicit causal/relational connective.
   const touchedEdgeIds: string[] = []
-  for (const edge of activeGraph.edges) {
-    if (touchedNodeIds.includes(edge.from) && touchedNodeIds.includes(edge.to)) {
-      touchedEdgeIds.push(edge.id)
+  if (targetEdge) {
+    const fromTouched = touchedNodeIds.includes(targetEdge.from)
+    const toTouched = touchedNodeIds.includes(targetEdge.to)
+    const hasCausalConnective = /\b(so(\s+that)?|because|to\s+avoid|prevents|eliminates|instead\s+of|since|in\s+order\s+to)\b/i.test(cleaned)
+    if (fromTouched && toTouched && hasCausalConnective) {
+      touchedEdgeIds.push(targetEdge.id)
     }
   }
 
