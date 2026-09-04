@@ -15,6 +15,9 @@ import {
   type ActiveChatState,
 } from '../lib/chatHistory'
 import { PROBLEMS, type Problem } from '../data/problems'
+import { getActiveGraph } from '../lib/problemGraphs'
+import { evaluateDialogueStepAsync, serializeActiveThread } from '../lib/liteSocratic'
+import { formatStructuredTutorContext } from '../lib/tutorContext'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -23,10 +26,10 @@ interface Message {
 
 type Mode = 'lite' | 'loading' | 'ai'
 
-// Builds a system prompt that includes the active problem's context.
+// Builds a system prompt that includes the active problem's context and structured pedagogical state.
 // The AI knows the intended pattern internally but must NOT reveal it —
 // it must guide the user Socratically through hints, invariants, and questions.
-function buildSystemPrompt(problem?: Problem): string {
+function buildSystemPrompt(problem?: Problem, structuredContext?: string): string {
   if (!problem) {
     return `You are a world-class DSA interview coach using the Socratic method.
 Guide the user to discover data structure and algorithmic patterns on their own.
@@ -39,6 +42,8 @@ Rules:
 - Keep responses concise (2-4 sentences max per turn).`
   }
 
+  const contextSection = structuredContext ? `\n${structuredContext}\n` : ''
+
   return `You are a world-class DSA interview coach using the Socratic method.
 You are coaching the user on the problem "${problem.title}" (${problem.difficulty}).
 
@@ -50,7 +55,7 @@ INTERNAL PEDAGOGICAL DESTINATION (DO NOT REVEAL DIRECTLY OR PREMATURELY):
 - Target Complexities: Time ${problem.expectedTime}, Space ${problem.expectedSpace}
 - Progressive Hints:
 ${problem.hints.map((h, i) => `  ${i + 1}. ${h}`).join('\n')}
-
+${contextSection}
 STRICT SOCRATIC PROGRESSION RULES:
 1. PROGRESS THROUGH STAGES GRADUALLY:
    - UNDERSTANDING / EXAMPLE -> BRUTE FORCE -> COMPLEXITY -> BOTTLENECK -> OPTIMIZATION -> DATA STRUCTURE -> KEY INSIGHT / COMPLEMENT -> ALGORITHM -> IMPLEMENTATION -> VERIFICATION -> REFLECTION.
@@ -59,10 +64,11 @@ STRICT SOCRATIC PROGRESSION RULES:
 4. If the learner understands the problem, ask how they would solve it with a basic brute-force approach first.
 5. If the learner proposes brute force, validate it and ask for its time complexity and where redundant work occurs.
 6. If the learner jumps directly to the optimal approach, validate their insight and verify WHY it works (invariants, key-value mappings) before coding.
-7. If the learner is stuck or says "I don't know", break down the current step into a simpler question grounded in Example 1.
-8. STRUCTURE EVERY RESPONSE:
-   - Sentence 1: Briefly acknowledge what they got right.
-   - Sentence 2-3: Ask exactly ONE focused question to advance to the immediate next stage.`
+7. If the learner proposes a valid alternative approach (such as sorting), explore its correctness and time/space complexity tradeoffs rather than rejecting it.
+8. If the learner is stuck or says "I don't know", break down the current step into a simpler question grounded in Example 1.
+9. STRUCTURE EVERY RESPONSE:
+   - Sentence 1: Briefly acknowledge what they got right based on demonstrated knowledge.
+   - Sentence 2-3: Ask exactly ONE focused question to advance to the immediate next stage / pedagogical focus.`
 }
 
 // Builds the initial welcome message seeded with the problem context
@@ -797,6 +803,21 @@ export default function WebLLMChat({
     }
 
     try {
+      let structuredContext = ''
+      let activeThreadMeta = ''
+      try {
+        const step = await evaluateDialogueStepAsync(userMsg.content, problemRef.current, nextMessages)
+        const graph = getActiveGraph(problemRef.current?.slug, step.activeThread.current.approachId)
+        structuredContext = formatStructuredTutorContext(problemRef.current, {
+          graph,
+          model: step.mentalModel,
+          decision: step.decision,
+        })
+        activeThreadMeta = serializeActiveThread(step.decision.newThread)
+      } catch (e) {
+        console.warn('Could not compute structured tutor context for Full AI prompt:', e)
+      }
+
       const noteContext =
         retrieved.length > 0
           ? `\n\nRelevant notes from the user's own material — ground your guidance in these where they apply:\n${retrieved
@@ -804,7 +825,7 @@ export default function WebLLMChat({
               .join('\n')}`
           : ''
       const historyPayload = [
-        { role: 'system', content: buildSystemPrompt(problemRef.current) + noteContext },
+        { role: 'system', content: buildSystemPrompt(problemRef.current, structuredContext) + noteContext },
         ...messagesRef.current.slice(-6).map((m) => ({ role: m.role, content: m.content })),
         { role: 'user', content: userMsg.content },
       ]
@@ -813,7 +834,11 @@ export default function WebLLMChat({
         temperature: 0.7,
         max_tokens: 256,
       })
-      const content = reply.choices[0]?.message?.content || 'Let me think about that...'
+      const rawContent = reply.choices[0]?.message?.content || 'Let me think about that...'
+      const content =
+        activeThreadMeta && !rawContent.includes('<!--lite:')
+          ? `${rawContent}\n${activeThreadMeta}`
+          : rawContent
       const finalMessages = [...nextMessages, { role: 'assistant' as const, content }]
       messagesRef.current = finalMessages
       setMessages(finalMessages)

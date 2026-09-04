@@ -8,6 +8,8 @@ import {
   isNodeGrounded,
   isNodeCausal,
 } from '../src/lib/mentalModel.ts'
+import { planPedagogicalAction } from '../src/lib/pedagogicalPlanner.ts'
+import { formatStructuredTutorContext } from '../src/lib/tutorContext.ts'
 
 const cdProblem = PROBLEMS.find((p) => p.slug === 'contains-duplicate')!
 const graphCD = getActiveGraph('contains-duplicate')
@@ -678,6 +680,33 @@ async function runSemanticRobustnessSuite() {
   assert(
     isNodeGrounded(recBS, bsMidNode),
     '10.D. Binary Search midpoint_comparison is grounded via "the middle"'
+  )
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 11. STRUCTURED TUTOR CONTEXT FOR FULL AI
+  // ─────────────────────────────────────────────────────────────────────────
+  console.log('\n--- 11. Structured Tutor Context Generation ---')
+
+  const baseModel11 = createInitialMentalModel(graphCD)
+  const baseInterp11 = await interpretLearnerMessageAsync('Use a Set', cdProblem, defaultThread, graphCD)
+  const updatedModel11 = applyInterpretationDelta(baseModel11, baseInterp11, graphCD)
+  const decision11 = planPedagogicalAction(updatedModel11, defaultThread, baseInterp11, graphCD)
+
+  const contextText11 = formatStructuredTutorContext(cdProblem, {
+    graph: graphCD,
+    model: updatedModel11,
+    decision: decision11,
+  })
+
+  assert(contextText11.includes('Pedagogical Focus:'), '11.1 Includes Pedagogical Focus header')
+  assert(contextText11.includes('Demonstrated Knowledge:'), '11.2 Includes Demonstrated Knowledge')
+  assert(
+    contextText11.includes('DO NOT ask the learner to rediscover what is already listed under "Demonstrated Knowledge"'),
+    '11.3 Has anti-rediscovery instruction'
+  )
+  assert(
+    contextText11.includes('Sorting & adjacent comparison'),
+    '11.4 Includes valid alternative strategies'
   )
 
   console.log('\n============================================================')
