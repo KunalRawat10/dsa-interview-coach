@@ -482,7 +482,7 @@ export async function interpretLearnerMessageAsync(
   activeThread?: ActiveThread,
   graph?: ApproachGraph
 ): Promise<LearnerInterpretation> {
-  const activeGraph = graph ?? getActiveGraph(problem?.slug, activeThread?.current.approachId)
+  const activeGraph = graph ?? getActiveGraph(problem?.slug, activeThread?.current.approachId, problem)
   const baseInterpretation = interpretLearnerMessage(rawText, problem, activeThread, activeGraph)
 
   if (baseInterpretation.isQuestion) {

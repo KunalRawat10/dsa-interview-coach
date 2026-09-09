@@ -162,7 +162,7 @@ export async function executeFullAITurnSafe({
   try {
     step = await resolveDialogueStepSafe(userText, problem, messages)
     onStepEvaluated?.(step)
-    const graph = getActiveGraph(problem?.slug, step.activeThread.current.approachId)
+    const graph = getActiveGraph(problem?.slug, step.activeThread.current.approachId, problem)
     structuredContext = formatStructuredTutorContext(problem, {
       graph,
       model: step.mentalModel,
@@ -1251,8 +1251,8 @@ export default function WebLLMChat({
   // Active thread extracted from conversation truth
   const activeThread = useMemo(() => extractActiveThread(messages), [messages])
   const activeGraph = useMemo(
-    () => getActiveGraph(problem?.slug, activeThread.current.approachId),
-    [problem?.slug, activeThread.current.approachId]
+    () => getActiveGraph(problem?.slug, activeThread.current.approachId, problem),
+    [problem, activeThread.current.approachId]
   )
   const stageInfo = useMemo(
     () => getPedagogicalStage(activeThread, activeGraph, solvedConfirmed),

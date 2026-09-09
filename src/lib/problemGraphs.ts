@@ -977,8 +977,141 @@ export const BINARY_SEARCH_CANONICAL: ApproachGraph = {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// REGISTRY
+// REGISTRY & DYNAMIC FALLBACK
 // ─────────────────────────────────────────────────────────────────────────────
+
+import { PROBLEMS, type Problem, type PatternTag } from '../data/problems'
+
+export const PATTERN_STRATEGY_EVIDENCE_MAP: Record<PatternTag, string[]> = {
+  'hash-set': ['hash set', 'hashset', 'seen set'],
+  'hash-map': ['hash map', 'hashmap', 'hash table', 'map data structure'],
+  'frequency-map': ['frequency map', 'count array', 'frequency array', 'count characters'],
+  'stack': ['stack structure', 'use a stack', 'push to stack', 'lifo'],
+  'running-min': ['running minimum', 'running min', 'track lowest', 'track minimum'],
+  'binary-search': ['binary search', 'midpoint', 'halving', 'divide and conquer'],
+  'sliding-window': ['sliding window', 'window', 'expand window', 'shrink window'],
+  'kadane': ['kadane', 'kadanes', 'running sum', 'current subarray sum'],
+  'prefix-suffix': ['prefix product', 'suffix product', 'prefix array', 'suffix array', 'prefix sum'],
+  'sorting-intervals': ['sort intervals', 'sort by start', 'merge intervals', 'sorting by start time'],
+  'sorting-two-pointers': ['sort and two pointers', 'sort first then two pointers', 'two pointers after sorting'],
+  'two-pointers': ['two pointers', 'left and right pointers', 'converging pointers'],
+  'monotonic-stack': ['monotonic stack', 'decreasing stack', 'increasing stack'],
+  'bfs-dfs': ['breadth first search', 'depth first search', 'flood fill', 'bfs', 'dfs'],
+  'heap-bucket': ['bucket sort', 'min heap', 'max heap', 'priority queue', 'frequency bucket'],
+  'graph-traversal': ['clone graph', 'graph traversal', 'visited map', 'visited dictionary'],
+  'topological-sort': ['topological sort', 'kahn', 'kahns algorithm', 'in degree', 'indegree'],
+  'tree-recursion': ['lowest common ancestor', 'post order', 'tree recursion', 'dfs traversal'],
+  'dynamic-programming': ['dynamic programming', 'memoization', 'dp array', 'dp table', 'tabulation'],
+}
+
+export const PATTERN_INVARIANT_EVIDENCE_MAP: Record<PatternTag, string[]> = {
+  'hash-set': ['num minus 1 not in set', 'sequence start', 'only count from start', 'membership check'],
+  'hash-map': ['complement in map', 'lookup complement', 'target minus current'],
+  'frequency-map': ['counts match', 'counts cancel', 'same frequencies', 'frequencies are equal', 'cancel out'],
+  'stack': ['top of stack matches', 'unclosed opener', 'pop matching opener'],
+  'running-min': ['cheapest buy price', 'price minus min so far', 'lowest seen so far'],
+  'binary-search': ['discard half', 'eliminate half', 'target in remaining half'],
+  'sliding-window': ['contract left', 'shrink left', 'duplicate in window', 'move left pointer', 'window is valid'],
+  'kadane': ['reset to zero', 'start fresh', 'running sum becomes negative', 'drop negative sum'],
+  'prefix-suffix': ['left of i', 'right of i', 'multiply prefix and suffix', 'product before and after'],
+  'sorting-intervals': ['start before end', 'overlaps previous', 'extend end time', 'start is less than previous end'],
+  'sorting-two-pointers': ['skip duplicates', 'sum is less than zero', 'sum is greater than zero', 'move left when small'],
+  'two-pointers': ['move shorter boundary', 'shorter line is limiting factor', 'advance shorter pointer'],
+  'monotonic-stack': ['pop smaller', 'pop when warmer', 'greater element found', 'stack stays decreasing'],
+  'bfs-dfs': ['mark visited', 'sink island', 'turn into water', 'already visited cell'],
+  'heap-bucket': ['heap size exceeds k', 'pop smallest', 'buckets indexed by count', 'frequency as index'],
+  'graph-traversal': ['already cloned', 'node in visited map', 'use existing clone', 'prevent cycle'],
+  'topological-sort': ['indegree becomes zero', 'in degree reaches zero', 'no incoming edges', 'cycle detected'],
+  'tree-recursion': ['split left and right', 'found in left and right', 'p and q in different subtrees'],
+  'dynamic-programming': ['dp at j is true', 'valid prefix before', 'subproblem is true', 'word in dictionary'],
+}
+
+export function createMetadataFallbackGraph(problem: Problem): ApproachGraph {
+  const strategyEvidence = [
+    ...(PATTERN_STRATEGY_EVIDENCE_MAP[problem.patternTag] ?? []),
+    problem.pattern.toLowerCase(),
+  ]
+
+  const invariantEvidence = [
+    ...(PATTERN_INVARIANT_EVIDENCE_MAP[problem.patternTag] ?? []),
+  ]
+
+  const nodes: ConceptNode[] = [
+    {
+      id: 'goal',
+      label: `${problem.title} Goal`,
+      category: 'GOAL',
+      semanticSummary: `Determine the optimal solution for ${problem.title}: ${problem.description}`,
+      expectedEvidencePatterns: [],
+      contextualEvidencePatterns: ['solve the problem', 'find the answer', 'what is required', 'goal of the problem'],
+      prerequisiteNodeIds: [],
+    },
+    {
+      id: 'strategy',
+      label: `${problem.pattern} Strategy`,
+      category: 'OPTIMIZATION_STRATEGY',
+      semanticSummary: `${problem.observation} ${problem.structuralClue}`,
+      expectedEvidencePatterns: [...new Set(strategyEvidence)],
+      contextualEvidencePatterns: [`use ${problem.pattern.toLowerCase()}`, problem.patternTag.replace(/-/g, ' ')],
+      prerequisiteNodeIds: ['goal'],
+    },
+    {
+      id: 'invariant',
+      label: `${problem.pattern} Invariant & Mechanism`,
+      category: 'INVARIANT_MECHANISM',
+      semanticSummary: problem.invariant,
+      expectedEvidencePatterns: [...new Set(invariantEvidence)],
+      contextualEvidencePatterns: [],
+      prerequisiteNodeIds: ['strategy'],
+    },
+    {
+      id: 'branch',
+      label: `${problem.title} Operational Step`,
+      category: 'OPERATIONAL_BRANCH',
+      semanticSummary: `Complete logic running in ${problem.expectedTime} time and ${problem.expectedSpace} space.`,
+      expectedEvidencePatterns: [],
+      contextualEvidencePatterns: [],
+      prerequisiteNodeIds: ['invariant'],
+    },
+  ]
+
+  const edges: ConceptEdge[] = [
+    {
+      id: 'goal_to_strategy',
+      from: 'goal',
+      to: 'strategy',
+      type: 'solved_by',
+      semanticMeaning: `Applying ${problem.pattern} solves ${problem.title} without naive brute-force overhead.`,
+      expectedJustification: `Because ${problem.structuralClue}`,
+    },
+    {
+      id: 'strategy_to_invariant',
+      from: 'strategy',
+      to: 'invariant',
+      type: 'implemented_by',
+      semanticMeaning: `The strategy correctly maintains the invariant: ${problem.invariant}`,
+      expectedJustification: `Because maintaining this invariant ensures every element is processed correctly in ${problem.expectedTime}.`,
+    },
+    {
+      id: 'invariant_to_branch',
+      from: 'invariant',
+      to: 'branch',
+      type: 'branches_to',
+      semanticMeaning: `All operational conditions and invariants are established for coding in ${problem.expectedTime} and ${problem.expectedSpace}.`,
+      expectedJustification: `Because the invariant covers all cases, allowing the final implementation to meet the complexity bounds.`,
+    },
+  ]
+
+  return {
+    id: `fallback-${problem.slug}`,
+    name: `${problem.title} Approach`,
+    isCanonical: true,
+    nodes,
+    edges,
+  }
+}
+
+const fallbackGraphCache = new Map<string, ApproachGraph>()
 
 export const PROBLEM_GRAPHS: Record<string, ApproachGraph[]> = {
   'contains-duplicate': [CONTAINS_DUPLICATE_CANONICAL, CONTAINS_DUPLICATE_SORTING],
@@ -990,13 +1123,27 @@ export const PROBLEM_GRAPHS: Record<string, ApproachGraph[]> = {
   'binary-search': [BINARY_SEARCH_CANONICAL],
 }
 
-export function getProblemGraphs(slug?: string): ApproachGraph[] {
-  if (!slug) return [CONTAINS_DUPLICATE_CANONICAL]
-  return PROBLEM_GRAPHS[slug] ?? [CONTAINS_DUPLICATE_CANONICAL]
+export function getProblemGraphs(slug?: string, problem?: Problem): ApproachGraph[] {
+  if (slug && PROBLEM_GRAPHS[slug]) {
+    return PROBLEM_GRAPHS[slug]
+  }
+
+  const targetProblem = problem ?? (slug ? PROBLEMS.find((p) => p.slug === slug) : undefined)
+
+  if (targetProblem) {
+    let cached = fallbackGraphCache.get(targetProblem.slug)
+    if (!cached) {
+      cached = createMetadataFallbackGraph(targetProblem)
+      fallbackGraphCache.set(targetProblem.slug, cached)
+    }
+    return [cached]
+  }
+
+  return [CONTAINS_DUPLICATE_CANONICAL]
 }
 
-export function getActiveGraph(slug?: string, approachId?: string): ApproachGraph {
-  const graphs = getProblemGraphs(slug)
+export function getActiveGraph(slug?: string, approachId?: string, problem?: Problem): ApproachGraph {
+  const graphs = getProblemGraphs(slug, problem)
   if (!approachId) return graphs.find((g) => g.isCanonical) ?? graphs[0]
   return graphs.find((g) => g.id === approachId) ?? graphs[0]
 }

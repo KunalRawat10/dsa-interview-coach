@@ -208,6 +208,15 @@ export function renderSocraticResponse(
   if (node?.id === 'termination') {
     return `If we reach the end of the array without finding any duplicate, what should we return?`
   }
+  if (node?.id === 'strategy') {
+    return `Looking at ${exInput}, what algorithmic strategy or data structure could help us solve this efficiently?`
+  }
+  if (node?.id === 'invariant') {
+    return `What core invariant or condition must our algorithm maintain at each step?`
+  }
+  if (node?.id === 'branch') {
+    return `How do the operational steps and boundaries handle the remaining elements to complete the solution?`
+  }
 
   // Generic Dynamic Construction
   if (cognitiveTask === 'IMPLEMENT') {

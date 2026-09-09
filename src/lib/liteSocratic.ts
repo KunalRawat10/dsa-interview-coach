@@ -126,7 +126,7 @@ export function evaluateDialogueStep(
   history: MessageHistoryItem[] = []
 ): SocraticEvaluationTrace {
   const activeThread = extractActiveThread(history)
-  const graph = getActiveGraph(problem?.slug, activeThread.current.approachId)
+  const graph = getActiveGraph(problem?.slug, activeThread.current.approachId, problem)
   const { model, currentInterpretation } = reconstructMentalModel(history, userText, graph, problem)
 
   const decision = planPedagogicalAction(model, activeThread, currentInterpretation, graph)
@@ -287,7 +287,7 @@ export async function evaluateDialogueStepAsync(
   history: MessageHistoryItem[] = []
 ): Promise<SocraticEvaluationTrace> {
   const activeThread = extractActiveThread(history)
-  const graph = getActiveGraph(problem?.slug, activeThread.current.approachId)
+  const graph = getActiveGraph(problem?.slug, activeThread.current.approachId, problem)
   const { model, currentInterpretation } = await reconstructMentalModelAsync(history, userText, graph, problem)
 
   const decision = planPedagogicalAction(model, activeThread, currentInterpretation, graph)
