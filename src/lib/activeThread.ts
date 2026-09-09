@@ -2,7 +2,7 @@
 // Active Thread — Authoritative Dialogue State & History Serialization
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { CognitiveTask, PedagogicalAction } from './problemGraphs'
+import type { ApproachGraph, CognitiveTask, PedagogicalAction } from './problemGraphs'
 
 export interface ActiveThreadFrame {
   approachId: string
@@ -20,6 +20,114 @@ export interface ActiveThread {
 export interface MessageHistoryItem {
   role: 'user' | 'assistant'
   content: string
+}
+
+export type PedagogicalStageId = 1 | 2 | 3 | 4
+
+export interface PedagogicalStageInfo {
+  currentStage: PedagogicalStageId
+  stageName: 'Understanding' | 'Brute Force' | 'Strategy' | 'Implementation'
+  isSolved: boolean
+  isAlternativeApproach: boolean
+}
+
+export const PEDAGOGICAL_STAGES = [
+  { id: 1 as const, name: 'Understanding' as const },
+  { id: 2 as const, name: 'Brute Force' as const },
+  { id: 3 as const, name: 'Strategy' as const },
+  { id: 4 as const, name: 'Implementation' as const },
+]
+
+export function getPedagogicalStage(
+  thread?: ActiveThread | null,
+  graph?: ApproachGraph | null,
+  solved: boolean = false
+): PedagogicalStageInfo {
+  if (solved) {
+    return {
+      currentStage: 4,
+      stageName: 'Implementation',
+      isSolved: true,
+      isAlternativeApproach: false,
+    }
+  }
+
+  const isAlt = Boolean(
+    thread?.current?.approachId &&
+      thread.current.approachId !== 'canonical' &&
+      graph &&
+      !graph.isCanonical
+  )
+
+  if (!thread || !thread.current) {
+    return {
+      currentStage: 1,
+      stageName: 'Understanding',
+      isSolved: false,
+      isAlternativeApproach: false,
+    }
+  }
+
+  if (thread.current.pedagogicalAction === 'OFFER_CODE_IMPLEMENTATION') {
+    return {
+      currentStage: 4,
+      stageName: 'Implementation',
+      isSolved: false,
+      isAlternativeApproach: isAlt,
+    }
+  }
+
+  const targetNodeId = thread.current.targetNodeId
+  const targetEdgeId = thread.current.targetEdgeId
+
+  let category = graph?.nodes.find((n) => n.id === targetNodeId)?.category
+
+  if (!category && targetEdgeId && graph?.edges) {
+    const edge = graph.edges.find((e) => e.id === targetEdgeId)
+    if (edge) {
+      category =
+        graph.nodes.find((n) => n.id === edge.to)?.category ??
+        graph.nodes.find((n) => n.id === edge.from)?.category
+    }
+  }
+
+  let stage: PedagogicalStageId = 1
+
+  switch (category) {
+    case 'GOAL':
+      stage = 1
+      break
+    case 'BRUTE_FORCE':
+    case 'BOTTLENECK':
+      stage = 2
+      break
+    case 'OPTIMIZATION_STRATEGY':
+    case 'DATA_STRUCTURE':
+    case 'INVARIANT_MECHANISM':
+      stage = 3
+      break
+    case 'OPERATIONAL_BRANCH':
+    case 'TERMINATION':
+      stage = 4
+      break
+    default:
+      stage = 1
+      break
+  }
+
+  const stageNames: Record<PedagogicalStageId, 'Understanding' | 'Brute Force' | 'Strategy' | 'Implementation'> = {
+    1: 'Understanding',
+    2: 'Brute Force',
+    3: 'Strategy',
+    4: 'Implementation',
+  }
+
+  return {
+    currentStage: stage,
+    stageName: stageNames[stage],
+    isSolved: false,
+    isAlternativeApproach: isAlt,
+  }
 }
 
 export function getDefaultActiveThread(): ActiveThread {

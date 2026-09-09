@@ -50,6 +50,7 @@ export interface Problem {
   hints: string[]
   expectedTime: string
   expectedSpace: string
+  alternativeStrategies?: string[]
 }
 
 export const PROBLEMS: Problem[] = [
@@ -80,6 +81,11 @@ export const PROBLEMS: Problem[] = [
     ],
     expectedTime: 'O(n)',
     expectedSpace: 'O(n)',
+    alternativeStrategies: [
+      'Canonical Hash Set (O(n) time, O(n) space)',
+      'Sorting & adjacent comparison (O(n log n) time, O(1) space tradeoff)',
+      'Brute force pairwise comparison (O(n²) time baseline)',
+    ],
   },
   {
     id: 2,
@@ -108,6 +114,11 @@ export const PROBLEMS: Problem[] = [
     ],
     expectedTime: 'O(n)',
     expectedSpace: 'O(n)',
+    alternativeStrategies: [
+      'Canonical Hash Map one-pass (O(n) time, O(n) space)',
+      'Sorting with Two Pointers (O(n log n) time, O(n) space to preserve indices)',
+      'Brute force pairwise search (O(n²) time baseline)',
+    ],
   },
   {
     id: 3,
@@ -135,6 +146,10 @@ export const PROBLEMS: Problem[] = [
     ],
     expectedTime: 'O(n)',
     expectedSpace: 'O(1)',
+    alternativeStrategies: [
+      'Canonical Frequency Array / Map count (O(n) time, O(1) / O(k) space)',
+      'Sorting comparison (O(n log n) time, O(n) space tradeoff)',
+    ],
   },
   {
     id: 4,
@@ -163,6 +178,10 @@ export const PROBLEMS: Problem[] = [
     ],
     expectedTime: 'O(n)',
     expectedSpace: 'O(n)',
+    alternativeStrategies: [
+      'Canonical Stack LIFO tracking (O(n) time, O(n) space)',
+      'Repeated string replacement of pairs (O(n²) time baseline)',
+    ],
   },
   {
     id: 5,
@@ -189,6 +208,10 @@ export const PROBLEMS: Problem[] = [
     ],
     expectedTime: 'O(n)',
     expectedSpace: 'O(1)',
+    alternativeStrategies: [
+      'Canonical One-Pass Running Minimum (O(n) time, O(1) space)',
+      'Brute force checking all buy/sell pairs (O(n²) time baseline)',
+    ],
   },
   // ── CORE PATTERNS ────────────────────────────────────────────────────────────
   {
@@ -217,6 +240,10 @@ export const PROBLEMS: Problem[] = [
     ],
     expectedTime: 'O(log n)',
     expectedSpace: 'O(1)',
+    alternativeStrategies: [
+      'Canonical Binary Search midpoint halving (O(log n) time, O(1) space)',
+      'Linear scan search (O(n) time baseline)',
+    ],
   },
   {
     id: 7,
@@ -244,6 +271,10 @@ export const PROBLEMS: Problem[] = [
     ],
     expectedTime: 'O(n)',
     expectedSpace: 'O(min(n, charset))',
+    alternativeStrategies: [
+      'Canonical Sliding Window with Hash Set/Map (O(n) time, O(min(n, charset)) space)',
+      'Brute force checking all substring uniqueness (O(n³) / O(n²) time baseline)',
+    ],
   },
   {
     id: 8,
@@ -271,6 +302,11 @@ export const PROBLEMS: Problem[] = [
     ],
     expectedTime: 'O(n)',
     expectedSpace: 'O(1)',
+    alternativeStrategies: [
+      "Canonical Kadane's Algorithm / DP (O(n) time, O(1) space)",
+      'Divide and Conquer (O(n log n) time, O(log n) space tradeoff)',
+      'Brute force computing all subarray sums (O(n²) time baseline)',
+    ],
   },
   {
     id: 9,
@@ -298,6 +334,11 @@ export const PROBLEMS: Problem[] = [
     ],
     expectedTime: 'O(n)',
     expectedSpace: 'O(1) extra',
+    alternativeStrategies: [
+      'Canonical Prefix & Suffix Products (O(n) time, O(1) extra space)',
+      'Division using total product (disallowed by constraint, but conceptual baseline)',
+      'Brute force product of other elements per index (O(n²) time baseline)',
+    ],
   },
   {
     id: 10,
@@ -325,6 +366,10 @@ export const PROBLEMS: Problem[] = [
     ],
     expectedTime: 'O(n log n)',
     expectedSpace: 'O(n)',
+    alternativeStrategies: [
+      'Canonical Sorting by start time + linear merge (O(n log n) time, O(n) space)',
+      'Brute force graph overlap connected components (O(n²) time baseline)',
+    ],
   },
   // ── INTERMEDIATE ─────────────────────────────────────────────────────────────
   {
@@ -354,6 +399,11 @@ export const PROBLEMS: Problem[] = [
     ],
     expectedTime: 'O(n²)',
     expectedSpace: 'O(1) extra',
+    alternativeStrategies: [
+      'Canonical Sort + Two Pointers (O(n²) time, O(1) / O(n) space)',
+      'Hash Set per element fixed (O(n²) time, O(n) space tradeoff)',
+      'Brute force all triplets (O(n³) time baseline)',
+    ],
   },
   {
     id: 12,
@@ -381,6 +431,10 @@ export const PROBLEMS: Problem[] = [
     ],
     expectedTime: 'O(n)',
     expectedSpace: 'O(1)',
+    alternativeStrategies: [
+      'Canonical Two Pointers shrinking inward (O(n) time, O(1) space)',
+      'Brute force checking all line pairs (O(n²) time baseline)',
+    ],
   },
   {
     id: 13,
@@ -408,6 +462,10 @@ export const PROBLEMS: Problem[] = [
     ],
     expectedTime: 'O(n)',
     expectedSpace: 'O(n)',
+    alternativeStrategies: [
+      'Canonical Monotonic Decreasing Stack (O(n) time, O(n) space)',
+      'Brute force forward scan for each day (O(n²) time baseline)',
+    ],
   },
   {
     id: 14,
@@ -435,6 +493,10 @@ export const PROBLEMS: Problem[] = [
     ],
     expectedTime: 'O(m × n)',
     expectedSpace: 'O(m × n)',
+    alternativeStrategies: [
+      'Canonical BFS / DFS traversal with in-place sink (O(m × n) time, O(min(m, n)) space)',
+      'Disjoint Set / Union-Find (O(m × n × α) time, O(m × n) space)',
+    ],
   },
   {
     id: 15,
@@ -462,6 +524,11 @@ export const PROBLEMS: Problem[] = [
     ],
     expectedTime: 'O(n log k)',
     expectedSpace: 'O(n)',
+    alternativeStrategies: [
+      'Canonical Bucket Sort by frequency (O(n) time, O(n) space)',
+      'Min-Heap of size k (O(n log k) time, O(n) space tradeoff)',
+      'Full Sort of frequency pairs (O(n log n) time, O(n) space)',
+    ],
   },
   // ── ADVANCED ─────────────────────────────────────────────────────────────────
   {
@@ -490,6 +557,10 @@ export const PROBLEMS: Problem[] = [
     ],
     expectedTime: 'O(n)',
     expectedSpace: 'O(n)',
+    alternativeStrategies: [
+      'Canonical Hash Set sequence start scan (O(n) time, O(n) space)',
+      'Sorting and linear scan (O(n log n) time, O(1) space tradeoff)',
+    ],
   },
   {
     id: 17,
@@ -516,6 +587,10 @@ export const PROBLEMS: Problem[] = [
     ],
     expectedTime: 'O(V + E)',
     expectedSpace: 'O(V)',
+    alternativeStrategies: [
+      'Canonical DFS with Hash Map memoization (O(V + E) time, O(V) space)',
+      'BFS with Queue and Hash Map memoization (O(V + E) time, O(V) space)',
+    ],
   },
   {
     id: 18,
@@ -543,6 +618,10 @@ export const PROBLEMS: Problem[] = [
     ],
     expectedTime: 'O(V + E)',
     expectedSpace: 'O(V + E)',
+    alternativeStrategies: [
+      "Canonical Kahn's Algorithm / In-degree BFS (O(V + E) time, O(V + E) space)",
+      'DFS with 3-color cycle detection (O(V + E) time, O(V + E) space)',
+    ],
   },
   {
     id: 19,
@@ -570,6 +649,10 @@ export const PROBLEMS: Problem[] = [
     ],
     expectedTime: 'O(n)',
     expectedSpace: 'O(h)',
+    alternativeStrategies: [
+      'Canonical Recursive DFS bottom-up traversal (O(n) time, O(h) space)',
+      'Parent pointers with Hash Set of ancestors (O(n) time, O(n) space)',
+    ],
   },
   {
     id: 20,
@@ -598,6 +681,11 @@ export const PROBLEMS: Problem[] = [
     ],
     expectedTime: 'O(n² × m)',
     expectedSpace: 'O(n)',
+    alternativeStrategies: [
+      'Canonical Dynamic Programming / Memoized Search (O(n² × m) time, O(n) space)',
+      'Trie-based search with memoization (O(n² + total_words) time)',
+      'Brute force recursion without memoization (O(2ⁿ) exponential baseline)',
+    ],
   },
 ]
 

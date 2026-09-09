@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, memo } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo, memo } from 'react'
 import type { MLCEngine, ChatCompletionMessageParam } from '@mlc-ai/web-llm'
 import { liteRespond, liteRespondAsync } from '../lib/liteSocratic'
 import { useProgress } from '../hooks/useProgress'
@@ -16,7 +16,19 @@ import {
 } from '../lib/chatHistory'
 import { PROBLEMS, type Problem } from '../data/problems'
 import { getActiveGraph } from '../lib/problemGraphs'
-import { evaluateDialogueStepAsync, serializeActiveThread } from '../lib/liteSocratic'
+import {
+  evaluateDialogueStep,
+  evaluateDialogueStepAsync,
+  serializeActiveThread,
+  type SocraticEvaluationTrace,
+} from '../lib/liteSocratic'
+import {
+  extractActiveThread,
+  getPedagogicalStage,
+  PEDAGOGICAL_STAGES,
+  type PedagogicalStageInfo,
+  type MessageHistoryItem,
+} from '../lib/activeThread'
 import { formatStructuredTutorContext } from '../lib/tutorContext'
 
 interface Message {
@@ -29,7 +41,7 @@ type Mode = 'lite' | 'loading' | 'ai'
 // Builds a system prompt that includes the active problem's context and structured pedagogical state.
 // The AI knows the intended pattern internally but must NOT reveal it —
 // it must guide the user Socratically through hints, invariants, and questions.
-function buildSystemPrompt(problem?: Problem, structuredContext?: string): string {
+export function buildSystemPrompt(problem?: Problem, structuredContext?: string): string {
   if (!problem) {
     return `You are a world-class DSA interview coach using the Socratic method.
 Guide the user to discover data structure and algorithmic patterns on their own.
@@ -47,28 +59,142 @@ Rules:
   return `You are a world-class DSA interview coach using the Socratic method.
 You are coaching the user on the problem "${problem.title}" (${problem.difficulty}).
 
-INTERNAL PEDAGOGICAL DESTINATION (DO NOT REVEAL DIRECTLY OR PREMATURELY):
+CONFIDENTIAL INTERNAL PEDAGOGICAL DESTINATION (NEVER QUOTE, REVEAL, OR LIST DIRECTLY):
 - Intended Pattern: ${problem.pattern}
 - Key Observation: ${problem.observation}
 - Structural Clue: ${problem.structuralClue}
 - Invariant: ${problem.invariant}
 - Target Complexities: Time ${problem.expectedTime}, Space ${problem.expectedSpace}
-- Progressive Hints:
+- Progressive Hints (Internal Guidance Only):
 ${problem.hints.map((h, i) => `  ${i + 1}. ${h}`).join('\n')}
 ${contextSection}
-STRICT SOCRATIC PROGRESSION RULES:
-1. PROGRESS THROUGH STAGES GRADUALLY:
+STRICT ANTI-LEAKAGE & SOCRATIC RULES:
+1. CONFIDENTIAL INTERNAL-ONLY GUIDANCE:
+   - The pattern name, key observation, structural clue, invariant, hidden hints, alternative strategies, and graph destination / target concept are internal pedagogical guideposts for YOU only.
+   - DO NOT quote, list, announce, or reproduce these fields verbatim.
+   - DO NOT reveal the hidden graph destination or tell the learner the optimal algorithm directly before they discover it.
+2. PROGRESS THROUGH STAGES GRADUALLY:
    - UNDERSTANDING / EXAMPLE -> BRUTE FORCE -> COMPLEXITY -> BOTTLENECK -> OPTIMIZATION -> DATA STRUCTURE -> KEY INSIGHT / COMPLEMENT -> ALGORITHM -> IMPLEMENTATION -> VERIFICATION -> REFLECTION.
-2. ADVANCE BY AT MOST ONE CONCEPTUAL STAGE PER TURN.
-3. NEVER reveal the pattern name, data structure, formula, or optimal algorithm BEFORE the learner has discovered the need for it.
+3. ADVANCE BY AT MOST ONE CONCEPTUAL STAGE PER TURN.
 4. If the learner understands the problem, ask how they would solve it with a basic brute-force approach first.
 5. If the learner proposes brute force, validate it and ask for its time complexity and where redundant work occurs.
 6. If the learner jumps directly to the optimal approach, validate their insight and verify WHY it works (invariants, key-value mappings) before coding.
 7. If the learner proposes a valid alternative approach (such as sorting), explore its correctness and time/space complexity tradeoffs rather than rejecting it.
 8. If the learner is stuck or says "I don't know", break down the current step into a simpler question grounded in Example 1.
 9. STRUCTURE EVERY RESPONSE:
-   - Sentence 1: Briefly acknowledge what they got right based on demonstrated knowledge.
+   - Sentence 1: Briefly acknowledge what they got right based on demonstrated knowledge (or address active misconceptions).
    - Sentence 2-3: Ask exactly ONE focused question to advance to the immediate next stage / pedagogical focus.`
+}
+
+export function buildChatHistoryPayload(
+  systemContent: string,
+  messages: Message[],
+  noteContext: string = '',
+  maxRecent: number = 6
+): { role: string; content: string }[] {
+  return [
+    { role: 'system', content: systemContent + noteContext },
+    ...messages.slice(-maxRecent).map((m) => ({ role: m.role, content: m.content })),
+  ]
+}
+
+export function computeFullAIFallbackContent(
+  step?: SocraticEvaluationTrace
+): string {
+  return (
+    step?.fullResponseWithMeta ??
+    'I encountered an error. Let me try again — what was your question?'
+  )
+}
+
+export type DialogueEvaluatorAsync = typeof evaluateDialogueStepAsync
+
+let asyncEvaluatorOverride: DialogueEvaluatorAsync | null = null
+
+export function setDialogueEvaluatorAsyncForTesting(
+  fn: DialogueEvaluatorAsync | null
+): void {
+  asyncEvaluatorOverride = fn
+}
+
+export async function resolveDialogueStepSafe(
+  userText: string,
+  problem?: Problem,
+  history: MessageHistoryItem[] = []
+): Promise<SocraticEvaluationTrace> {
+  try {
+    const evaluator = asyncEvaluatorOverride ?? evaluateDialogueStepAsync
+    return await evaluator(userText, problem, history)
+  } catch (err) {
+    console.warn('Async semantic evaluation failed, falling back to synchronous dialogue step:', err)
+    return evaluateDialogueStep(userText, problem, history)
+  }
+}
+
+export interface ExecuteFullAITurnParams {
+  userText: string
+  problem?: Problem
+  messages: Message[]
+  retrievedNotes?: { chunk: { text: string } }[]
+  createCompletion: (payload: { role: string; content: string }[]) => Promise<{
+    choices: { message: { content: string | null } }[]
+  }>
+  onStepEvaluated?: (step: SocraticEvaluationTrace) => void
+}
+
+export interface ExecuteFullAITurnResult {
+  step?: SocraticEvaluationTrace
+  finalContent: string
+  usedFallback: boolean
+}
+
+export async function executeFullAITurnSafe({
+  userText,
+  problem,
+  messages,
+  retrievedNotes = [],
+  createCompletion,
+  onStepEvaluated,
+}: ExecuteFullAITurnParams): Promise<ExecuteFullAITurnResult> {
+  let structuredContext = ''
+  let activeThreadMeta = ''
+  let step: SocraticEvaluationTrace | undefined
+  try {
+    step = await resolveDialogueStepSafe(userText, problem, messages)
+    onStepEvaluated?.(step)
+    const graph = getActiveGraph(problem?.slug, step.activeThread.current.approachId)
+    structuredContext = formatStructuredTutorContext(problem, {
+      graph,
+      model: step.mentalModel,
+      decision: step.decision,
+      interpretation: step.interpretation,
+    })
+    activeThreadMeta = serializeActiveThread(step.decision.newThread)
+  } catch (e) {
+    console.warn('Could not compute structured tutor context for Full AI prompt:', e)
+  }
+
+  try {
+    const noteContext =
+      retrievedNotes.length > 0
+        ? `\n\nRelevant notes from the user's own material — ground your guidance in these where they apply:\n${retrievedNotes
+            .map((r) => '- ' + r.chunk.text)
+            .join('\n')}`
+        : ''
+    const systemContent = buildSystemPrompt(problem, structuredContext)
+    const historyPayload = buildChatHistoryPayload(systemContent, messages, noteContext, 6)
+    const reply = await createCompletion(historyPayload)
+    const rawContent = reply.choices[0]?.message?.content || 'Let me think about that...'
+    const content =
+      activeThreadMeta && !rawContent.includes('<!--lite:')
+        ? `${rawContent}\n${activeThreadMeta}`
+        : rawContent
+    return { step, finalContent: content, usedFallback: false }
+  } catch (err) {
+    console.error('Chat error in Full AI generation:', err)
+    const fallbackContent = computeFullAIFallbackContent(step)
+    return { step, finalContent: fallbackContent, usedFallback: true }
+  }
 }
 
 // Builds the initial welcome message seeded with the problem context
@@ -170,6 +296,90 @@ function renderInline(text: string): React.ReactNode[] {
   return parts
 }
 
+interface CodeBlockProps {
+  code: string
+  language?: string
+}
+
+const CodeBlock = memo(function CodeBlock({ code, language }: CodeBlockProps) {
+  const [copied, setCopied] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+    }
+  }, [])
+
+  const handleCopy = async () => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(code)
+      } else {
+        const textarea = document.createElement('textarea')
+        textarea.value = code
+        textarea.style.position = 'fixed'
+        textarea.style.left = '-9999px'
+        textarea.style.top = '0'
+        document.body.appendChild(textarea)
+        textarea.focus()
+        textarea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textarea)
+      }
+      setCopied(true)
+      if (timerRef.current) clearTimeout(timerRef.current)
+      timerRef.current = setTimeout(() => {
+        setCopied(false)
+      }, 2000)
+    } catch (err) {
+      console.warn('Copy to clipboard failed:', err)
+    }
+  }
+
+  const label = language ? language : 'Code'
+
+  return (
+    <div className="my-2 rounded-lg bg-ink-900 border border-ink-700 overflow-hidden text-left">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-ink-950/80 border-b border-ink-700/60 text-[11px]">
+        <span className="font-mono text-paper-400 uppercase tracking-wider text-[10px]">
+          {label}
+        </span>
+        <button
+          type="button"
+          onClick={handleCopy}
+          aria-label="Copy code to clipboard"
+          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer ${
+            copied
+              ? 'text-success bg-success/10 font-semibold'
+              : 'text-paper-400 hover:text-paper-100 hover:bg-ink-800'
+          }`}
+        >
+          {copied ? (
+            <>
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" className="shrink-0">
+                <path d="M2.5 6.5L5 9l4.5-5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span>Copied ✓</span>
+            </>
+          ) : (
+            <>
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" className="shrink-0">
+                <rect x="4" y="4" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.2" />
+                <path d="M2.5 7.5V3a.5.5 0 01.5-.5h4.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+              </svg>
+              <span>Copy</span>
+            </>
+          )}
+        </button>
+      </div>
+      <pre className="p-3 overflow-x-auto font-mono text-[0.8em] text-paper-200 leading-relaxed whitespace-pre m-0">
+        <code>{code}</code>
+      </pre>
+    </div>
+  )
+})
+
 const MarkdownContent = memo(function MarkdownContent({ content }: { content: string }) {
   const nodes: React.ReactNode[] = []
   const lines = content.split('\n')
@@ -181,6 +391,7 @@ const MarkdownContent = memo(function MarkdownContent({ content }: { content: st
 
     // Fenced code block
     if (line.trimStart().startsWith('```')) {
+      const lang = line.trimStart().replace(/^```/, '').trim()
       const fenceLines: string[] = []
       i++
       while (i < lines.length && !lines[i].trimStart().startsWith('```')) {
@@ -189,12 +400,11 @@ const MarkdownContent = memo(function MarkdownContent({ content }: { content: st
       }
       i++ // consume closing fence
       nodes.push(
-        <pre
+        <CodeBlock
           key={blockKey++}
-          className="my-2 overflow-x-auto rounded-lg bg-ink-900 border border-ink-700 px-3 py-2.5 font-mono text-[0.8em] text-paper-200 leading-relaxed whitespace-pre"
-        >
-          {fenceLines.join('\n')}
-        </pre>
+          code={fenceLines.join('\n')}
+          language={lang || undefined}
+        />
       )
       continue
     }
@@ -271,6 +481,78 @@ const MessageBubble = memo(function MessageBubble({ msg }: { msg: Message }) {
         ) : (
           // Assistant messages: render Markdown
           <MarkdownContent content={msg.content} />
+        )}
+      </div>
+    </div>
+  )
+})
+
+// ─── Pedagogical Stage Progress Indicator ─────────────────────────────────────
+// 4-stage segmented bar derived from ActiveThread + ApproachGraph truth.
+// Spoiler-free, accessible, responsive.
+
+interface PedagogicalStageProgressProps {
+  stageInfo: PedagogicalStageInfo
+}
+
+const PedagogicalStageProgress = memo(function PedagogicalStageProgress({
+  stageInfo,
+}: PedagogicalStageProgressProps) {
+  const { currentStage, stageName, isSolved, isAlternativeApproach } = stageInfo
+
+  const ariaLabel = isSolved
+    ? 'Interview progress: Problem solved, all stages complete'
+    : `Interview progress: Stage ${currentStage} of 4: ${stageName}`
+
+  return (
+    <div
+      role="progressbar"
+      aria-label={ariaLabel}
+      aria-valuemin={1}
+      aria-valuemax={4}
+      aria-valuenow={currentStage}
+      className="mb-3 rounded-lg border border-border-subtle bg-surface-raised px-3 py-2 text-xs"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-0">
+          {PEDAGOGICAL_STAGES.map((step) => {
+            const isCompleted = isSolved || step.id < currentStage
+            const isCurrent = !isSolved && step.id === currentStage
+
+            return (
+              <div
+                key={step.id}
+                className={`flex-1 flex items-center justify-center sm:justify-start gap-1.5 px-2 py-1 rounded-md transition-colors min-w-0 ${
+                  isCurrent
+                    ? 'bg-accent/15 border border-accent/40 text-text-primary font-medium shadow-sm'
+                    : isCompleted
+                      ? 'bg-success/10 text-success border border-transparent'
+                      : 'text-text-muted border border-transparent opacity-60'
+                }`}
+              >
+                <span
+                  className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-mono shrink-0 ${
+                    isCurrent
+                      ? 'bg-accent text-white font-semibold'
+                      : isCompleted
+                        ? 'bg-success/20 text-success font-semibold'
+                        : 'bg-white/5 text-text-muted'
+                  }`}
+                >
+                  {isCompleted ? '✓' : step.id}
+                </span>
+                <span className="truncate hidden sm:inline text-[11px]">
+                  {step.name}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+
+        {isAlternativeApproach && (
+          <span className="shrink-0 font-mono text-[9px] uppercase tracking-wide text-accent px-1.5 py-0.5 rounded border border-accent/30 bg-accent/10">
+            Strategy: Alternative
+          </span>
         )}
       </div>
     </div>
@@ -400,6 +682,7 @@ const ChatInputBar = memo(function ChatInputBar({
   const [input, setInput] = useState('')
   const [showHistory, setShowHistory] = useState(false)
   const [showConfirmClear, setShowConfirmClear] = useState(false)
+  const [showConfirmReset, setShowConfirmReset] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Auto-grow textarea
@@ -409,6 +692,20 @@ const ChatInputBar = memo(function ChatInputBar({
     el.style.height = 'auto'
     el.style.height = Math.min(el.scrollHeight, 160) + 'px'
   }, [input])
+
+  // Close popovers on Escape key
+  useEffect(() => {
+    if (!showHistory && !showConfirmClear && !showConfirmReset) return
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowHistory(false)
+        setShowConfirmClear(false)
+        setShowConfirmReset(false)
+      }
+    }
+    window.addEventListener('keydown', handleGlobalKeyDown)
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown)
+  }, [showHistory, showConfirmClear, showConfirmReset])
 
   const handleSend = () => {
     const trimmed = input.trim()
@@ -458,6 +755,7 @@ const ChatInputBar = memo(function ChatInputBar({
               onClick={() => {
                 setShowHistory((v) => !v)
                 setShowConfirmClear(false)
+                setShowConfirmReset(false)
               }}
               className="text-text-muted hover:text-accent transition-colors"
             >
@@ -553,6 +851,7 @@ const ChatInputBar = memo(function ChatInputBar({
                 onClick={() => {
                   setShowConfirmClear((v) => !v)
                   setShowHistory(false)
+                  setShowConfirmReset(false)
                 }}
                 className="text-text-muted hover:text-danger transition-colors"
               >
@@ -591,15 +890,50 @@ const ChatInputBar = memo(function ChatInputBar({
             </div>
           )}
 
-          <button
-            onClick={() => {
-              setShowConfirmClear(false)
-              onClearChat()
-            }}
-            className="text-text-muted hover:text-danger transition-colors"
-          >
-            Reset chat
-          </button>
+          <div className="relative inline-flex items-center">
+            <button
+              onClick={() => {
+                setShowConfirmReset((v) => !v)
+                setShowConfirmClear(false)
+                setShowHistory(false)
+              }}
+              className="text-text-muted hover:text-danger transition-colors"
+            >
+              Reset chat
+            </button>
+
+            {showConfirmReset && (
+              <div
+                role="dialog"
+                aria-labelledby="reset-dialog-title"
+                className="absolute bottom-full right-0 mb-2 w-72 sm:w-80 max-w-[calc(100vw-2.5rem)] rounded-xl border border-ink-600 bg-ink-900 shadow-xl p-3.5 text-left z-30"
+              >
+                <div id="reset-dialog-title" className="text-xs font-medium text-paper-100 mb-1">
+                  Reset current conversation?
+                </div>
+                <div className="text-[11px] text-paper-400 leading-relaxed mb-3">
+                  This starts a fresh interview for this problem. Previous messages remain available through History.
+                </div>
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    onClick={() => setShowConfirmReset(false)}
+                    className="px-2.5 py-1 text-xs text-paper-300 hover:text-paper-100 transition-colors rounded-md"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      onClearChat()
+                      setShowConfirmReset(false)
+                    }}
+                    className="px-2.5 py-1 text-xs font-medium text-white bg-danger/80 hover:bg-danger rounded-md transition-colors shadow-sm"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
           <span>
             {mode === 'ai'
               ? 'Full local AI — no data leaves your browser'
@@ -802,71 +1136,33 @@ export default function WebLLMChat({
       return
     }
 
-    try {
-      let structuredContext = ''
-      let activeThreadMeta = ''
-      try {
-        const step = await evaluateDialogueStepAsync(userMsg.content, problemRef.current, nextMessages)
-        const graph = getActiveGraph(problemRef.current?.slug, step.activeThread.current.approachId)
-        structuredContext = formatStructuredTutorContext(problemRef.current, {
-          graph,
-          model: step.mentalModel,
-          decision: step.decision,
-        })
-        activeThreadMeta = serializeActiveThread(step.decision.newThread)
-      } catch (e) {
-        console.warn('Could not compute structured tutor context for Full AI prompt:', e)
-      }
+    const result = await executeFullAITurnSafe({
+      userText: userMsg.content,
+      problem: problemRef.current,
+      messages: nextMessages,
+      retrievedNotes: retrieved,
+      createCompletion: (payload) =>
+        engineRef.current!.chat.completions.create({
+          messages: payload as ChatCompletionMessageParam[],
+          temperature: 0.7,
+          max_tokens: 256,
+        }),
+    })
 
-      const noteContext =
-        retrieved.length > 0
-          ? `\n\nRelevant notes from the user's own material — ground your guidance in these where they apply:\n${retrieved
-              .map((r) => '- ' + r.chunk.text)
-              .join('\n')}`
-          : ''
-      const historyPayload = [
-        { role: 'system', content: buildSystemPrompt(problemRef.current, structuredContext) + noteContext },
-        ...messagesRef.current.slice(-6).map((m) => ({ role: m.role, content: m.content })),
-        { role: 'user', content: userMsg.content },
-      ]
-      const reply = await engineRef.current.chat.completions.create({
-        messages: historyPayload as ChatCompletionMessageParam[],
-        temperature: 0.7,
-        max_tokens: 256,
-      })
-      const rawContent = reply.choices[0]?.message?.content || 'Let me think about that...'
-      const content =
-        activeThreadMeta && !rawContent.includes('<!--lite:')
-          ? `${rawContent}\n${activeThreadMeta}`
-          : rawContent
-      const finalMessages = [...nextMessages, { role: 'assistant' as const, content }]
-      messagesRef.current = finalMessages
-      setMessages(finalMessages)
-      const { history: savedHistory } = persistActiveSession({
-        sessionId: sessionIdRef.current,
-        problemId: problemRef.current?.id,
-        problemTitle: problemRef.current?.title,
-        messages: finalMessages,
-      })
-      setHistory(savedHistory)
-    } catch (err) {
-      console.error('Chat error:', err)
-      const errorMessages = [
-        ...nextMessages,
-        { role: 'assistant' as const, content: 'I encountered an error. Let me try again — what was your question?' },
-      ]
-      messagesRef.current = errorMessages
-      setMessages(errorMessages)
-      const { history: savedHistory } = persistActiveSession({
-        sessionId: sessionIdRef.current,
-        problemId: problemRef.current?.id,
-        problemTitle: problemRef.current?.title,
-        messages: errorMessages,
-      })
-      setHistory(savedHistory)
-    } finally {
-      setIsThinking(false)
-    }
+    const finalMessages = [
+      ...nextMessages,
+      { role: 'assistant' as const, content: result.finalContent },
+    ]
+    messagesRef.current = finalMessages
+    setMessages(finalMessages)
+    const { history: savedHistory } = persistActiveSession({
+      sessionId: sessionIdRef.current,
+      problemId: problemRef.current?.id,
+      problemTitle: problemRef.current?.title,
+      messages: finalMessages,
+    })
+    setHistory(savedHistory)
+    setIsThinking(false)
   }, [isThinking, mode, recordActivity])
 
   const clearChat = useCallback(() => {
@@ -952,6 +1248,17 @@ export default function WebLLMChat({
 
   // ── Derived state ────────────────────────────────────────────────────────────
 
+  // Active thread extracted from conversation truth
+  const activeThread = useMemo(() => extractActiveThread(messages), [messages])
+  const activeGraph = useMemo(
+    () => getActiveGraph(problem?.slug, activeThread.current.approachId),
+    [problem?.slug, activeThread.current.approachId]
+  )
+  const stageInfo = useMemo(
+    () => getPedagogicalStage(activeThread, activeGraph, solvedConfirmed),
+    [activeThread, activeGraph, solvedConfirmed]
+  )
+
   // Fresh session: only the initial welcome assistant message, no user messages yet
   const isFreshSession = messages.length === 1 && messages[0].role === 'assistant'
 
@@ -991,6 +1298,9 @@ export default function WebLLMChat({
           {downloadProgress || 'Starting download...'} — Lite Mode still works while this downloads.
         </div>
       )}
+
+      {/* Pedagogical Stage Progress Indicator */}
+      <PedagogicalStageProgress stageInfo={stageInfo} />
 
       {/* Messages — naturally sizes without artificial empty dead air.
           Scrollable as messages accumulate. */}

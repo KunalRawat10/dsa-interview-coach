@@ -89,7 +89,7 @@ export function detectMisconceptions(text: string): {
   // 1. Single loop implies O(n) linear complexity
   if (
     /\bo\s*\(\s*n\s*\)/i.test(lower) &&
-    /\b(single loop|one loop|loop once|only loop|going through.*once|one pass)\b/i.test(lower) &&
+    /\b((single|one)\s+(loop|pass|scan)|(loop\w*|scan\w*|go\w*\s+through)\b[^.?!;]*?\bonce|only\s+(loop|scan))\b/i.test(lower) &&
     !/\b(hash|set|map|dictionary|two pointers|binary)\b/i.test(lower)
   ) {
     types.push('SINGLE_LOOP_IMPLIES_LINEAR')
