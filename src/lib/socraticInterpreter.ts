@@ -73,7 +73,7 @@ export function detectCodeSyntax(text: string): boolean {
     /\bdef\s+\w+\s*\(/i,
     /\b(const|let|var)\s+\w+\s*=/i,
     /\bfor\s*\(\s*(let|var|int|const)?\s*\w+/i,
-    /\breturn\s+(true|false|null|None|\w+\[|-1|\d+)/i,
+    /(?:^|[;{}\n])\s*return\s+[^;\n]+;/m,
     /=>\s*\{/,
   ].some((p) => p.test(text))
 }

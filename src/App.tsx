@@ -1,15 +1,12 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react'
 import './App.css'
 import gsap from 'gsap'
 import Navbar from './components/Navbar'
-import AppDock from './components/AppDock'
-import Background from './components/Background'
-import HomeBackground from './components/home/HomeBackground'
-import HomePage from './components/home/HomePage'
-import Constellation from './views/Constellation'
-import Chat from './views/Chat'
-import Analyzer from './views/Analyzer'
-import KnowledgeBase from './views/KnowledgeBase'
+const HomePage = lazy(() => import('./components/home/FieldHome'))
+const Constellation = lazy(() => import('./views/Constellation'))
+const Chat = lazy(() => import('./views/Chat'))
+const Analyzer = lazy(() => import('./views/Analyzer'))
+const KnowledgeBase = lazy(() => import('./views/KnowledgeBase'))
 
 export type TabId = 'home' | 'constellation' | 'practice' | 'complexity' | 'knowledge' | 'dashboard' | 'chat' | 'analyzer'
 
@@ -37,7 +34,6 @@ export default function App() {
   const isFirstRender = useRef(true)
 
   const isHome = activeTab === 'home' || activeTab === 'dashboard'
-  const isPractice = activeTab === 'practice' || activeTab === 'chat'
 
   const handleTabChange = useCallback((nextTab: TabId) => {
     setActiveTabState((currentTab) => {
@@ -61,7 +57,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (mainRef.current && !isFirstRender.current) {
+    if (mainRef.current && !isFirstRender.current && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       gsap.fromTo(
         mainRef.current,
         { opacity: 0, y: 10 },
@@ -72,30 +68,28 @@ export default function App() {
   }, [activeTab])
 
   return (
-    <div className="min-h-screen bg-void text-text-primary flex flex-col font-sans relative overflow-x-hidden">
+    <div className="theme-notebook min-h-screen bg-void text-text-primary flex flex-col font-sans relative overflow-x-hidden">
       {/* Home uses dark flowing algorithmic background; other pages use their existing Silk background */}
-      {isHome ? <HomeBackground /> : <Background />}
 
       <div className="relative z-10 flex flex-col min-h-screen">
         <Navbar activeTab={activeTab} onTabChange={handleTabChange} />
         <main
           ref={mainRef}
-          className={`flex-1 w-full mx-auto ${
+          className={`flex-1 w-full mx-auto ${!isHome ? 'workspace' : ''} ${
             isHome
-              ? 'pt-0 pb-28 sm:pb-36'
-              : isPractice
-                ? 'px-6 pt-24 pb-32 max-w-6xl'
-                : 'px-6 pt-24 pb-32 max-w-5xl'
+              ? 'pt-0'
+              : 'px-4 sm:px-6 pt-24 pb-12 max-w-6xl'
           }`}
         >
+          <Suspense fallback={<p role="status" className="p-6 text-sm">Opening lesson…</p>}>
           {isHome && <HomePage onNavigate={handleTabChange} />}
           {activeTab === 'constellation' && <Constellation />}
           {(activeTab === 'practice' || activeTab === 'chat') && <Chat />}
           {(activeTab === 'complexity' || activeTab === 'analyzer') && <Analyzer />}
           {activeTab === 'knowledge' && <KnowledgeBase onNavigate={handleTabChange} />}
+          </Suspense>
         </main>
         {/* AppDock is globally mounted and interactive across all pages */}
-        <AppDock activeTab={activeTab} onNavigate={handleTabChange} />
       </div>
     </div>
   )

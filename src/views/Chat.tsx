@@ -5,8 +5,24 @@ import { PROBLEMS } from '../data/problems'
 import type { Problem } from '../data/problems'
 import { usePracticeProgress } from '../hooks/usePracticeProgress'
 import { loadActiveSession } from '../lib/chatHistory'
+import LearningLab from '../components/LearningLab'
+import { emptyLearningRecord, learningContext, readLearningRecord, recordActivity, type ActivityId } from '../lib/learningActivities'
 
 export default function Chat() {
+  const [learningRecord, setLearningRecord] = useState(() => {
+    try { return readLearningRecord(localStorage.getItem('patternos-learning-v1')) } catch { return emptyLearningRecord() }
+  })
+  const [storageWarning, setStorageWarning] = useState('')
+  const [panel, setPanel] = useState<'conversation' | 'workshop'>('conversation')
+  const saveLearning = (next: typeof learningRecord) => {
+    setLearningRecord(next)
+    try { localStorage.setItem('patternos-learning-v1', JSON.stringify(next)); setStorageWarning('') }
+    catch { setStorageWarning('Progress is available for this visit, but your browser could not save it.') }
+  }
+  const completeActivity = (id: ActivityId, mistakes: number) => saveLearning(recordActivity(learningRecord, id, mistakes))
+  const viewExplanation = (id: string) => {
+    if (!learningRecord.viewed.includes(id)) saveLearning({ ...learningRecord, viewed: [...learningRecord.viewed, id] })
+  }
   const [status, setStatus] = useState('Initializing...')
   const {
     progress,
@@ -51,10 +67,7 @@ export default function Chat() {
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div>
-          <h2 className="text-2xl font-medium">Socratic Chamber</h2>
-          <p className="text-sm text-text-tertiary mt-1">
-            AI-powered interview coaching. Your code never leaves your browser.
-          </p>
+          <h2 className="text-2xl font-medium">Practice</h2>
         </div>
         <div className="flex items-center gap-2 text-xs">
           <span
@@ -62,7 +75,7 @@ export default function Chat() {
               status.includes('ready') ? 'bg-success' : status.includes('failed') ? 'bg-danger' : 'bg-warning animate-pulse'
             }`}
           />
-          <span className="text-text-muted">{status}</span>
+          <span className="text-text-muted" title={status}>{status.includes('ready') ? 'AI ready' : status.includes('download') || status.includes('Downloading') ? 'Loading AI' : 'Basic hints'}</span>
         </div>
       </div>
 
@@ -76,16 +89,30 @@ export default function Chat() {
         attemptedIds={attemptedIds}
       />
 
+      <div role="tablist" aria-label="Practice workspace" className="mb-4 flex gap-5 border-b border-border-subtle">
+        {(['conversation', 'workshop'] as const).map(item => <button key={item} id={`tab-${item}`} role="tab" tabIndex={panel === item ? 0 : -1} aria-selected={panel === item} aria-controls={`panel-${item}`} onClick={() => setPanel(item)} onKeyDown={event => {
+          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+          event.preventDefault()
+          const next = event.key === 'Home' ? 'conversation' : event.key === 'End' ? 'workshop' : panel === 'conversation' ? 'workshop' : 'conversation'
+          setPanel(next)
+          document.getElementById(`tab-${next}`)?.focus()
+        }} className={`workspace-tab border-b-2 px-1 py-3 text-sm transition-colors ${panel === item ? 'border-accent text-text-primary' : 'border-transparent text-text-tertiary hover:text-text-primary'}`}>{item === 'conversation' ? 'Conversation' : 'Workshop'}</button>)}
+      </div>
+      <div id="panel-workshop" role="tabpanel" aria-labelledby="tab-workshop" hidden={panel !== 'workshop'}>
+        <LearningLab key={activeProblem.id} record={learningRecord} onComplete={completeActivity} onViewed={viewExplanation} duplicateProblem={activeProblem.slug === 'contains-duplicate'} />
+      </div>
+      {storageWarning && <p role="status" className="mb-3 text-xs text-warning">{storageWarning}</p>}
       {/* Chat Interface — naturally sizes to the conversation content without
           artificial empty space below the input, while growing as conversation deepens.
           No backdrop-filter. bg-surface/75 is plain alpha compositing. */}
-      <div className="rounded-xl border border-border-subtle bg-surface/75 shadow-xl shadow-black/40 p-5">
+      <div id="panel-conversation" role="tabpanel" aria-labelledby="tab-conversation" hidden={panel !== 'conversation'} className="workspace-panel p-4 sm:p-5">
         <WebLLMChat
           onStatusChange={setStatus}
           problem={activeProblem}
           userSelectionToken={userSelectionToken}
           onSolved={handleSolved}
           onHistorySyncProblem={handleHistorySyncProblem}
+          learningContext={activeProblem.slug === 'contains-duplicate' ? learningContext(learningRecord) : ''}
         />
       </div>
     </div>

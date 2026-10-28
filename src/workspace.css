@@ -1,0 +1,53 @@
+/* Lightweight visual refinements for the learning workspaces. */
+.workspace {
+  --color-text-primary: #272d28;
+  --color-text-secondary: #4e574f;
+  --color-text-tertiary: #636c62;
+  --color-text-muted: #707569;
+  --color-border-subtle: #d9d3c5;
+  --color-border-hover: #b0aa9b;
+  --color-surface: #fffdf8;
+  --color-surface-raised: #f8f5ee;
+  --color-surface-strong: #e5e0d2;
+  --color-accent: #315b49;
+}
+.workspace h2 { font-family: Georgia, serif; font-size: 30px; letter-spacing: -.035em; font-weight: 400; }
+.workspace h3, .workspace h4 { letter-spacing: -.015em; }
+.workspace-panel {
+  background: #fffdf8;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 5px;
+  box-shadow: 0 2px 0 #ddd6c74d;
+}
+.workspace :is(input, textarea, select) { color-scheme: light; border-radius: 4px; }
+.workspace :is(input, textarea)::placeholder { color: #707569; }
+.workspace :is(input, textarea, select):focus-visible {
+  outline: 2px solid #ae502e;
+  outline-offset: 3px;
+}
+.workspace :is(button, summary):focus-visible {
+  outline: 2px solid #ae502e;
+  outline-offset: 3px;
+}
+.workspace summary { line-height: 1.6; }
+.workspace summary::marker { color: #ae502e; }
+.workspace select { min-height: 36px; }
+.workspace button.bg-accent { color: #fffdf8; font-weight: 600; }
+.workspace textarea { line-height: 1.75; }
+.workspace .message-assistant { background: #fffdf8; border-color: #d9d3c5; border-left: 3px solid #315b49; border-radius: 4px; }
+.workspace .message-user { background: #e8eddf; border: 1px solid #cad3bf; border-radius: 6px; }
+.workspace .message-assistant, .workspace .message-user { overflow-wrap: anywhere; }
+.workspace .workspace-tab[aria-selected="true"] { color: #315b49; border-color: #315b49; }
+.workspace .workspace-tab { padding-inline: 8px; }
+.workspace .analysis-panel-heading { background: #f1ede3; }
+.workspace .analysis-empty-icon {
+  display: grid; place-items: center; width: 48px; height: 48px;
+  border: 1px solid #c8cebb; border-radius: 4px;
+  background: #e8eddf; color: #315b49;
+}
+::selection { background: #dce4c8; color: #263a2c; }
+.workspace .seen-box { background: #f1ede3; }
+.workspace button, .workspace details { border-radius: 4px; }
+@media (prefers-reduced-motion: reduce) {
+  .workspace *, .workspace *::before, .workspace *::after { animation: none !important; transition: none !important; }
+}

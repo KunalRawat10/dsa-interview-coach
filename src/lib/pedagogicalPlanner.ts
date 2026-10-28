@@ -179,17 +179,9 @@ export function planPedagogicalAction(
 
   if (isImplementationReady) {
     const termNode = terminationNodes[0] ?? operationalBranches[operationalBranches.length - 1]
-    const termRecord = model.nodes[termNode.id]
-
-    // Determine if the learner has already responded to the code implementation prompt
-    const hasProvidedImplementation =
-      currentFrame.pedagogicalAction === 'OFFER_CODE_IMPLEMENTATION' ||
-      interpretation.hasCode ||
-      termRecord?.state === 'APPLIED' ||
-      termRecord?.state === 'ARTICULATED' ||
-      interpretation.touchedNodeIds.includes(termNode.id)
-
-    const isInitialOffer = !hasProvidedImplementation && currentFrame.pedagogicalAction !== 'OFFER_CODE_IMPLEMENTATION'
+    // Explaining termination or previously being asked for code is not a submission.
+    const hasProvidedImplementation = interpretation.hasCode
+    const isInitialOffer = !hasProvidedImplementation
 
     const cognitiveTask: CognitiveTask = isInitialOffer ? 'IMPLEMENT' : 'SUMMARIZE'
 
@@ -205,7 +197,7 @@ export function planPedagogicalAction(
 
     const completionReason = isInitialOffer
       ? 'All operational branches articulated; learner is ready for code implementation.'
-      : 'Learner provided code implementation / summary; validating and concluding solution.'
+      : 'Learner submitted code; request verification rather than claiming correctness.'
 
     return {
       action: 'OFFER_CODE_IMPLEMENTATION',

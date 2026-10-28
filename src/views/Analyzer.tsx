@@ -142,19 +142,19 @@ export default function Analyzer() {
   }
 
   return (
-    <div ref={containerRef} className="h-[calc(100vh-140px)] flex flex-col">
-      <div className="analyzer-header text-center space-y-1 mb-4">
-        <h2 className="text-2xl font-medium">Complexity Forge</h2>
-        <p className="text-text-tertiary text-sm">Paste your code. Get instant Big-O analysis.</p>
+    <div ref={containerRef} className="min-h-[calc(100dvh-160px)] flex flex-col">
+      <div className="analyzer-header space-y-2 mb-6">
+        <h2 className="text-2xl font-medium">Complexity analysis</h2>
+        <p className="text-text-tertiary text-sm">A closer look at the work your code does.</p>
       </div>
 
-      <div className="flex-1 grid grid-cols-2 gap-4 min-h-0">
-        <div className="analyzer-left flex flex-col rounded-xl border border-border-subtle overflow-hidden bg-surface-raised">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle bg-surface-strong">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-5 min-h-0">
+        <div className="workspace-panel analyzer-left min-h-[360px] flex flex-col overflow-hidden">
+          <div className="analysis-panel-heading flex flex-wrap gap-3 items-center justify-between px-5 py-4 border-b border-border-subtle">
             <span className="text-sm font-medium">Your Code</span>
             <button
               onClick={analyze}
-              className="px-4 py-1.5 bg-accent text-black rounded-lg text-xs font-medium hover:opacity-90 transition-opacity"
+              className="px-4 py-2 bg-accent text-surface rounded-lg text-xs font-semibold hover:opacity-90 transition-opacity"
             >
               Analyze Complexity
             </button>
@@ -163,13 +163,13 @@ export default function Analyzer() {
             value={code}
             onChange={(e) => setCode(e.target.value)}
             spellCheck={false}
-            className="flex-1 bg-transparent p-4 text-sm font-mono text-text-secondary leading-relaxed resize-none outline-none"
+            className="flex-1 min-h-[300px] bg-transparent p-5 text-sm font-mono text-text-secondary leading-relaxed resize-y outline-none"
             style={{ fontFamily: 'monospace' }}
           />
         </div>
 
-        <div className="analyzer-right flex flex-col rounded-xl border border-border-subtle overflow-hidden bg-surface-raised">
-          <div className="px-4 py-3 border-b border-border-subtle bg-surface-strong">
+        <div className="workspace-panel analyzer-right min-h-[360px] flex flex-col overflow-hidden">
+          <div className="analysis-panel-heading px-5 py-4 border-b border-border-subtle">
             <span className="text-sm font-medium">Analysis Result</span>
           </div>
           <div className="flex-1 overflow-y-auto p-5 space-y-5">
@@ -262,7 +262,7 @@ export default function Analyzer() {
               </>
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-text-muted space-y-2">
-                <div className="text-3xl">◈</div>
+                <div className="analysis-empty-icon text-2xl" aria-hidden="true">◈</div>
                 <p className="text-sm">Click "Analyze Complexity" to see results</p>
                 <p className="text-xs text-text-muted">Paste code on the left and run analysis</p>
               </div>

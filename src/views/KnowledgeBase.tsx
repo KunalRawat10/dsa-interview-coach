@@ -74,23 +74,26 @@ export default function KnowledgeBase({ onNavigate }: KnowledgeBaseProps) {
                     onClick={() => onNavigate('dashboard')}
                     className="text-sm text-text-tertiary hover:text-accent mb-3"
                 >
-                    ← Back to Observatory
+                    ← Back to field guide
                 </button>
-                <h2 className="text-2xl font-medium">Knowledge Base</h2>
+                <h2 className="text-2xl font-medium">Field notes</h2>
                 <p className="text-sm text-text-tertiary mt-1">
-                    Paste your DSA notes here. The Socratic Chamber retrieves and grounds its hints in
-                    them — nothing ever leaves your browser.
+                    Keep the explanations that clicked. Use your notes as a reference during practice.
                 </p>
             </div>
 
-            <div className="rounded-xl border border-border-subtle bg-surface-raised p-5 space-y-3">
+            <div className="workspace-panel p-5 sm:p-6 space-y-3">
+                <label htmlFor="note-title" className="block text-sm font-medium">Note title</label>
                 <input
+                    id="note-title"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     placeholder="Source title, e.g. 'Striver A2Z — Sliding Window'"
                     className="w-full bg-surface/50 border border-border-subtle rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent/50"
                 />
+                <label htmlFor="note-content" className="block text-sm font-medium pt-2">Your notes</label>
                 <textarea
+                    id="note-content"
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     rows={8}
@@ -104,13 +107,13 @@ export default function KnowledgeBase({ onNavigate }: KnowledgeBaseProps) {
                         disabled={busy || !notes.trim()}
                         className="shrink-0 px-4 py-2 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent/90 disabled:opacity-40 transition-all"
                     >
-                        {busy ? 'Embedding...' : 'Save & Embed'}
+                        {busy ? 'Preparing notes…' : 'Save notes'}
                     </button>
                 </div>
             </div>
 
             {Object.keys(grouped).length > 0 && (
-                <div className="rounded-xl border border-border-subtle bg-surface-raised p-5 space-y-4">
+                <div className="workspace-panel p-5 sm:p-6 space-y-4">
                     <div className="flex items-center justify-between">
                         <h3 className="text-sm font-medium text-text-secondary">
                             Stored notes ({chunks.length} chunks)

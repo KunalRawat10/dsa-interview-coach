@@ -1,21 +1,20 @@
-import { pipeline, env } from '@xenova/transformers'
-
-// Local model files only — no remote inference calls, no server round-trip.
-env.allowLocalModels = false
 
 type Extractor = any
 let extractorPromise: Promise<Extractor> | null = null
 
 function getExtractor(onProgress?: (pct: number) => void): Promise<Extractor> {
     if (!extractorPromise) {
-        extractorPromise = pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+        extractorPromise = import('@xenova/transformers').then(({ pipeline, env }) => {
+          env.allowLocalModels = false
+          return pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
             quantized: true,
             progress_callback: (data: any) => {
                 if (data?.status === 'progress' && typeof data.progress === 'number') {
                     onProgress?.(Math.round(data.progress))
                 }
             },
-        })
+          })
+        }).catch(error => { extractorPromise = null; throw error })
     }
     return extractorPromise
 }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo, memo } from 'react'
-import type { MLCEngine, ChatCompletionMessageParam } from '@mlc-ai/web-llm'
-import { liteRespond, liteRespondAsync } from '../lib/liteSocratic'
+import type { MLCEngine, WebWorkerMLCEngine, ChatCompletionMessageParam } from '@mlc-ai/web-llm'
+import { liteRespond } from '../lib/liteSocratic'
 import { useProgress } from '../hooks/useProgress'
 import { retrieveForQuery } from '../lib/retrieval'
 import {
@@ -19,7 +19,6 @@ import { getActiveGraph } from '../lib/problemGraphs'
 import {
   evaluateDialogueStep,
   evaluateDialogueStepAsync,
-  serializeActiveThread,
   type SocraticEvaluationTrace,
 } from '../lib/liteSocratic'
 import {
@@ -29,74 +28,17 @@ import {
   type PedagogicalStageInfo,
   type MessageHistoryItem,
 } from '../lib/activeThread'
-import { formatStructuredTutorContext } from '../lib/tutorContext'
+import { generateLessonTurn, getLessonState, prepareUserTurn, type LearningGoal, type LessonState, type LessonMessage } from '../lib/lessonTutor'
+import { desktopCompletion, findDesktopModel } from '../lib/desktopTutor'
+import { type TutorChunk, type TutorCompletionOptions } from '../lib/conversationalTutor'
+import { generateSmallModelTurn, smallestCompatibleModel } from '../lib/smallModel'
+import OfflineLessons from './OfflineLessons'
+import { MODEL_TIERS, activeModelTier, modelTierLabel, type ModelTier } from '../lib/modelTiers'
+export { buildSystemPrompt, buildChatHistoryPayload } from '../lib/conversationalTutor'
 
-interface Message {
-  role: 'user' | 'assistant'
-  content: string
-}
+type Message = LessonMessage
 
 type Mode = 'lite' | 'loading' | 'ai'
-
-// Builds a system prompt that includes the active problem's context and structured pedagogical state.
-// The AI knows the intended pattern internally but must NOT reveal it —
-// it must guide the user Socratically through hints, invariants, and questions.
-export function buildSystemPrompt(problem?: Problem, structuredContext?: string): string {
-  if (!problem) {
-    return `You are a world-class DSA interview coach using the Socratic method.
-Guide the user to discover data structure and algorithmic patterns on their own.
-Rules:
-- NEVER write complete solutions or code unless the user explicitly asks for code review after attempting it.
-- Ask one focused question at a time to build intuition.
-- Help them identify problem structure: inputs, constraints, invariants, patterns.
-- If they are stuck, give the gentlest possible hint.
-- Validate good thinking and gently probe flawed assumptions.
-- Keep responses concise (2-4 sentences max per turn).`
-  }
-
-  const contextSection = structuredContext ? `\n${structuredContext}\n` : ''
-
-  return `You are a world-class DSA interview coach using the Socratic method.
-You are coaching the user on the problem "${problem.title}" (${problem.difficulty}).
-
-CONFIDENTIAL INTERNAL PEDAGOGICAL DESTINATION (NEVER QUOTE, REVEAL, OR LIST DIRECTLY):
-- Intended Pattern: ${problem.pattern}
-- Key Observation: ${problem.observation}
-- Structural Clue: ${problem.structuralClue}
-- Invariant: ${problem.invariant}
-- Target Complexities: Time ${problem.expectedTime}, Space ${problem.expectedSpace}
-- Progressive Hints (Internal Guidance Only):
-${problem.hints.map((h, i) => `  ${i + 1}. ${h}`).join('\n')}
-${contextSection}
-STRICT ANTI-LEAKAGE & SOCRATIC RULES:
-1. CONFIDENTIAL INTERNAL-ONLY GUIDANCE:
-   - The pattern name, key observation, structural clue, invariant, hidden hints, alternative strategies, and graph destination / target concept are internal pedagogical guideposts for YOU only.
-   - DO NOT quote, list, announce, or reproduce these fields verbatim.
-   - DO NOT reveal the hidden graph destination or tell the learner the optimal algorithm directly before they discover it.
-2. PROGRESS THROUGH STAGES GRADUALLY:
-   - UNDERSTANDING / EXAMPLE -> BRUTE FORCE -> COMPLEXITY -> BOTTLENECK -> OPTIMIZATION -> DATA STRUCTURE -> KEY INSIGHT / COMPLEMENT -> ALGORITHM -> IMPLEMENTATION -> VERIFICATION -> REFLECTION.
-3. ADVANCE BY AT MOST ONE CONCEPTUAL STAGE PER TURN.
-4. If the learner understands the problem, ask how they would solve it with a basic brute-force approach first.
-5. If the learner proposes brute force, validate it and ask for its time complexity and where redundant work occurs.
-6. If the learner jumps directly to the optimal approach, validate their insight and verify WHY it works (invariants, key-value mappings) before coding.
-7. If the learner proposes a valid alternative approach (such as sorting), explore its correctness and time/space complexity tradeoffs rather than rejecting it.
-8. If the learner is stuck or says "I don't know", break down the current step into a simpler question grounded in Example 1.
-9. STRUCTURE EVERY RESPONSE:
-   - Sentence 1: Briefly acknowledge what they got right based on demonstrated knowledge (or address active misconceptions).
-   - Sentence 2-3: Ask exactly ONE focused question to advance to the immediate next stage / pedagogical focus.`
-}
-
-export function buildChatHistoryPayload(
-  systemContent: string,
-  messages: Message[],
-  noteContext: string = '',
-  maxRecent: number = 6
-): { role: string; content: string }[] {
-  return [
-    { role: 'system', content: systemContent + noteContext },
-    ...messages.slice(-maxRecent).map((m) => ({ role: m.role, content: m.content })),
-  ]
-}
 
 export function computeFullAIFallbackContent(
   step?: SocraticEvaluationTrace
@@ -136,16 +78,21 @@ export interface ExecuteFullAITurnParams {
   problem?: Problem
   messages: Message[]
   retrievedNotes?: { chunk: { text: string } }[]
-  createCompletion: (payload: { role: string; content: string }[]) => Promise<{
-    choices: { message: { content: string | null } }[]
-  }>
+  createCompletion: (payload: { role: string; content: string }[], options?: TutorCompletionOptions) => Promise<
+    | AsyncIterable<TutorChunk>
+    | { choices: { message?: { content: string | null } }[] }
+  >
+  learningGoal?: LearningGoal
+  smallModel?: boolean
   onStepEvaluated?: (step: SocraticEvaluationTrace) => void
+  onChunk?: (currentText: string) => void
 }
 
 export interface ExecuteFullAITurnResult {
   step?: SocraticEvaluationTrace
   finalContent: string
   usedFallback: boolean
+  lesson?: LessonState
 }
 
 export async function executeFullAITurnSafe({
@@ -155,45 +102,25 @@ export async function executeFullAITurnSafe({
   retrievedNotes = [],
   createCompletion,
   onStepEvaluated,
+  learningGoal = 'concepts',
+  smallModel = false,
+  onChunk,
 }: ExecuteFullAITurnParams): Promise<ExecuteFullAITurnResult> {
-  let structuredContext = ''
-  let activeThreadMeta = ''
-  let step: SocraticEvaluationTrace | undefined
+  // Open conversation must not wait for or be gated by the Lite phrase matcher.
+  void onStepEvaluated
   try {
-    step = await resolveDialogueStepSafe(userText, problem, messages)
-    onStepEvaluated?.(step)
-    const graph = getActiveGraph(problem?.slug, step.activeThread.current.approachId, problem)
-    structuredContext = formatStructuredTutorContext(problem, {
-      graph,
-      model: step.mentalModel,
-      decision: step.decision,
-      interpretation: step.interpretation,
-    })
-    activeThreadMeta = serializeActiveThread(step.decision.newThread)
-  } catch (e) {
-    console.warn('Could not compute structured tutor context for Full AI prompt:', e)
-  }
-
-  try {
-    const noteContext =
-      retrievedNotes.length > 0
-        ? `\n\nRelevant notes from the user's own material — ground your guidance in these where they apply:\n${retrievedNotes
-            .map((r) => '- ' + r.chunk.text)
-            .join('\n')}`
-        : ''
-    const systemContent = buildSystemPrompt(problem, structuredContext)
-    const historyPayload = buildChatHistoryPayload(systemContent, messages, noteContext, 6)
-    const reply = await createCompletion(historyPayload)
-    const rawContent = reply.choices[0]?.message?.content || 'Let me think about that...'
-    const content =
-      activeThreadMeta && !rawContent.includes('<!--lite:')
-        ? `${rawContent}\n${activeThreadMeta}`
-        : rawContent
-    return { step, finalContent: content, usedFallback: false }
+    const notes = retrievedNotes.map(r => r.chunk.text).join('\n\n')
+    void userText
+    const result = await (smallModel ? generateSmallModelTurn : generateLessonTurn)(messages, problem, learningGoal, createCompletion, notes)
+    onChunk?.(result.reply)
+    return { finalContent: result.reply, lesson: result.lesson, usedFallback: false }
   } catch (err) {
     console.error('Chat error in Full AI generation:', err)
-    const fallbackContent = computeFullAIFallbackContent(step)
-    return { step, finalContent: fallbackContent, usedFallback: true }
+    return {
+      finalContent: 'The AI could not finish this reply. Please send your message again, or switch to Lite hints. Your conversation has been kept.',
+      usedFallback: true,
+      lesson: (err as { lesson?: LessonState } | null)?.lesson,
+    }
   }
 }
 
@@ -217,7 +144,7 @@ ${exampleText}
 Constraints: ${problem.constraints.join(', ')}
 
 ---
-Where would you like to start? What stands out about the inputs or what the problem is asking for?
+Tell me how you understand the problem, ask about an unfamiliar term, or share an approach. We can start wherever you need.
 <!--lite:{"current":{"approachId":"canonical","targetNodeId":"goal","cognitiveTask":"IDENTIFY","pedagogicalAction":"DEEPEN_PARTIAL_REASONING"},"returnStack":[]}-->`,
   }
 }
@@ -469,10 +396,10 @@ const MessageBubble = memo(function MessageBubble({ msg }: { msg: Message }) {
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
+        className={`max-w-[94%] sm:max-w-[85%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
           isUser
-            ? 'bg-accent/15 text-text-primary rounded-br-md'
-            : 'bg-surface-raised border border-border-subtle text-text-secondary rounded-bl-md'
+            ? 'message-user bg-accent/15 text-text-primary rounded-br-md'
+            : 'message-assistant bg-surface-raised border border-border-subtle text-text-secondary rounded-bl-md'
         }`}
       >
         {isUser ? (
@@ -936,8 +863,8 @@ const ChatInputBar = memo(function ChatInputBar({
           </div>
           <span>
             {mode === 'ai'
-              ? 'Full local AI — no data leaves your browser'
-              : 'Lite Mode — instant, no download'}
+              ? 'Local AI — conversation stays on this computer'
+              : 'Lite hints — limited language understanding'}
           </span>
         </div>
       </div>
@@ -948,6 +875,7 @@ const ChatInputBar = memo(function ChatInputBar({
 // ─── WebLLMChat ────────────────────────────────────────────────────────────────
 
 interface WebLLMChatProps {
+  learningContext?: string
   onStatusChange?: (status: string) => void
   problem?: Problem
   userSelectionToken?: number
@@ -961,13 +889,22 @@ export default function WebLLMChat({
   userSelectionToken,
   onSolved,
   onHistorySyncProblem,
+  learningContext = '',
 }: WebLLMChatProps) {
   const [initialData] = useState(() => initChatState(problem))
   const [sessionId, setSessionId] = useState(initialData.sessionId)
   const [messages, setMessages] = useState<Message[]>(initialData.messages)
+  const [learningGoal, setLearningGoal] = useState<LearningGoal>(() => getLessonState(initialData.messages, problem?.slug).goal)
   const [isThinking, setIsThinking] = useState(false)
   const [mode, setMode] = useState<Mode>('lite')
   const [downloadProgress, setDownloadProgress] = useState('')
+  const [aiError, setAiError] = useState('')
+  const [desktopModel, setDesktopModel] = useState('')
+  const modelLoadId = useRef(0)
+  const [modelSize, setModelSize] = useState<ModelTier>(() => {
+    try { const saved = localStorage.getItem('patternos-model-tier'); return MODEL_TIERS.some(item => item.id === saved) ? saved as ModelTier : 'smallest' } catch { return 'smallest' }
+  })
+  const [activeBrowserModel, setActiveBrowserModel] = useState('')
   const [lowPowerWarning] = useState(isLowPowerDevice)
   const [history, setHistory] = useState<ChatSession[]>(loadHistory)
   const [solvedConfirmed, setSolvedConfirmed] = useState(false)
@@ -976,7 +913,8 @@ export default function WebLLMChat({
   // Pure UI state — no session writes, no AI calls, no chat messages.
   const [hintIndex, setHintIndex] = useState(-1)
 
-  const engineRef = useRef<MLCEngine | null>(null)
+  const engineRef = useRef<WebWorkerMLCEngine | MLCEngine | null>(null)
+  const workerRef = useRef<Worker | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const isInitialMount = useRef(true)
   const lastStatusRef = useRef<string>('')
@@ -989,6 +927,20 @@ export default function WebLLMChat({
 
   const { recordActivity, recordProblemSolved } = useProgress()
 
+  const cleanupEngine = useCallback(() => {
+    modelLoadId.current++
+    if (engineRef.current) {
+      engineRef.current.unload().catch((err) => {
+        console.warn('Error unloading WebLLM engine:', err)
+      })
+      engineRef.current = null
+    }
+    if (workerRef.current) {
+      workerRef.current.terminate()
+      workerRef.current = null
+    }
+  }, [])
+
   // Centralized session ID updater with stack trace logging
   const setActiveSessionId = useCallback((nextId: string, reason: string) => {
     console.log('[SESSION ID CHANGE]', {
@@ -999,16 +951,33 @@ export default function WebLLMChat({
       stack: new Error().stack,
     })
     sessionIdRef.current = nextId
+    setIsThinking(false)
     setSessionId(nextId)
   }, [])
 
-  // Track component mount and unmount with active session ID
+  // Track component mount and unmount with active session ID and unload WebLLM engine
   useEffect(() => {
     console.log('[CHAT MOUNT]', { sessionId: sessionIdRef.current })
     return () => {
       console.log('[CHAT UNMOUNT]', { sessionId: sessionIdRef.current })
+      cleanupEngine()
     }
-  }, [])
+  }, [cleanupEngine])
+
+  // Broadcast AI mode state to isolate background GPU animations (e.g. Silk)
+  useEffect(() => {
+    const isAiActive = mode === 'loading' || mode === 'ai'
+    window.dispatchEvent(
+      new CustomEvent('patternos:ai-mode', { detail: { active: isAiActive } })
+    )
+    return () => {
+      if (isAiActive) {
+        window.dispatchEvent(
+          new CustomEvent('patternos:ai-mode', { detail: { active: false } })
+        )
+      }
+    }
+  }, [mode])
 
   // Keep refs in sync with state/props
   useEffect(() => { messagesRef.current = messages }, [messages])
@@ -1026,6 +995,7 @@ export default function WebLLMChat({
     // User intentionally selected a different problem from ProblemSelector: start a fresh session
     const newId = createSessionId('USER_PROBLEM_SELECT')
     const welcome = buildProblemWelcome(problem)
+    setLearningGoal('concepts')
     setActiveSessionId(newId, 'USER_PROBLEM_SELECT')
     messagesRef.current = [welcome]
     setMessages([welcome])
@@ -1041,10 +1011,10 @@ export default function WebLLMChat({
   useEffect(() => {
     const status =
       mode === 'lite'
-        ? 'Lite Mode — instant, no download'
+        ? 'Lite hints — limited language understanding'
         : mode === 'loading'
           ? downloadProgress || 'Starting download...'
-          : 'Full AI ready — works offline'
+          : 'Local AI ready'
 
     if (lastStatusRef.current !== status) {
       lastStatusRef.current = status
@@ -1062,30 +1032,96 @@ export default function WebLLMChat({
   }, [messages])
 
   const enableFullAI = useCallback(async () => {
+    cleanupEngine()
+    setIsThinking(false)
+    setDesktopModel('')
+    const loadId = modelLoadId.current
+    setAiError('')
     setMode('loading')
     try {
+      if (!('gpu' in navigator)) throw new Error('This browser does not support WebGPU. Try a current Chrome or Edge browser with hardware acceleration enabled.')
       const webllmModule = await import('@mlc-ai/web-llm')
-      const engine = await webllmModule.CreateMLCEngine('Qwen2.5-1.5B-Instruct-q4f32_1-MLC', {
-        initProgressCallback: (report) => {
-          const pct = Math.round(report.progress * 100)
-          setDownloadProgress(`Downloading model... ${pct}%`)
+      const gpu = (navigator as Navigator & { gpu: { requestAdapter: () => Promise<{ features: ReadonlySet<string> } | null> } }).gpu
+      const adapter = await gpu.requestAdapter()
+      if (!adapter) throw new Error('No compatible graphics adapter was found. The visual workshop still works without AI.')
+      const selectedModel = modelSize === 'smallest'
+        ? smallestCompatibleModel(webllmModule.prebuiltAppConfig.model_list, adapter.features)
+        : webllmModule.prebuiltAppConfig.model_list.find(item => item.model_id === `Qwen2.5-${modelSize}-Instruct-q4f32_1-MLC`)!
+      if (!selectedModel) throw new Error('The selected model is unavailable in this runtime.')
+      if (loadId !== modelLoadId.current) return
+      setActiveBrowserModel(selectedModel.model_id)
+      let lastProgressUpdate = 0
+      const THROTTLE_MS = 200
+
+      const worker = new Worker(
+        new URL('../workers/webllm.worker.ts', import.meta.url),
+        { type: 'module' }
+      )
+      workerRef.current = worker
+
+      const engine = await webllmModule.CreateWebWorkerMLCEngine(
+        worker,
+        selectedModel.model_id,
+        {
+          initProgressCallback: (report) => {
+            if (loadId !== modelLoadId.current) return
+            const pct = Math.round(report.progress * 100)
+            const now = Date.now()
+            if (pct >= 100 || now - lastProgressUpdate >= THROTTLE_MS) {
+              lastProgressUpdate = now
+              setDownloadProgress(`Downloading model... ${pct}%`)
+            }
+          },
         },
-      })
+        { context_window_size: modelSize === '1.5B' ? 8192 : 4096 }
+      )
+      if (loadId !== modelLoadId.current) {
+        await engine.unload()
+        return
+      }
       engineRef.current = engine
       setMode('ai')
       setDownloadProgress('')
     } catch (err) {
-      console.error('WebLLM init failed:', err)
+      if (loadId !== modelLoadId.current) return
+      console.error('WebLLM Web Worker init failed:', err)
+      cleanupEngine()
+      setIsThinking(false)
       setMode('lite')
+      setAiError(err instanceof Error ? err.message : 'The local model could not load. Check your connection and GPU support, then retry.')
       setDownloadProgress('')
     }
-  }, [])
+  }, [cleanupEngine, modelSize])
 
-  const sendMessage = useCallback(async (text: string) => {
+  const enableDesktopAI = useCallback(async () => {
+    cleanupEngine()
+    setIsThinking(false)
+    const loadId = modelLoadId.current
+    setAiError('')
+    setDownloadProgress('Connecting to installed desktop AI...')
+    setMode('loading')
+    try {
+      const selected = await findDesktopModel()
+      if (loadId !== modelLoadId.current) return
+      setDesktopModel(selected)
+      setMode('ai')
+      setDownloadProgress('')
+    } catch (error) {
+      if (loadId !== modelLoadId.current) return
+      setAiError(error instanceof Error ? error.message : 'Start Ollama and retry desktop AI.')
+      setMode('lite')
+    }
+  }, [cleanupEngine])
+
+  const sendMessage = useCallback(async (text: string, retry = false) => {
     if (!text.trim() || isThinking) return
 
-    const userMsg: Message = { role: 'user', content: text.trim() }
-    const nextMessages = [...messagesRef.current, userMsg]
+    const turnSessionId = sessionIdRef.current
+    const turnProblem = problemRef.current
+    const turnModelId = modelLoadId.current
+    const isCurrentTurn = () => sessionIdRef.current === turnSessionId && modelLoadId.current === turnModelId
+    const userMsg: Message = { role: 'user', content: text.trim(), learningGoal }
+    const nextMessages = prepareUserTurn(messagesRef.current, userMsg.content, learningGoal, retry)
     messagesRef.current = nextMessages
     setMessages(nextMessages)
     setIsThinking(true)
@@ -1100,21 +1136,18 @@ export default function WebLLMChat({
     })
     setHistory(updatedHistory)
 
-    const retrieved = await retrieveForQuery(userMsg.content).catch((err) => {
+    const retrieved = await retrieveForQuery(userMsg.content, 2, true).catch((err) => {
       console.error('Retrieval failed:', err)
       return []
     })
 
-    if (mode !== 'ai' || !engineRef.current) {
-      // Lite Mode: Hybrid Socratic Pedagogical State Engine (Tier 1 Exact + Tier 2 Semantic)
-      let base: string
-      try {
-        base = await liteRespondAsync(userMsg.content, problemRef.current, nextMessages)
-      } catch (err) {
-        console.warn('Semantic Socratic engine failed, falling back to rule-based path:', err)
-        base = liteRespond(userMsg.content, problemRef.current, nextMessages)
-      }
+    if (!isCurrentTurn()) return
 
+    if (mode !== 'ai' || (!desktopModel && !engineRef.current)) {
+      // Basic hints must not silently download a second embedding model.
+      const base = liteRespond(userMsg.content, turnProblem, nextMessages)
+
+      if (!isCurrentTurn()) return
       const reply =
         retrieved.length > 0
           ? `From your notes ("${retrieved[0].chunk.sourceTitle}"): "${retrieved[0].chunk.text.slice(0, 160)}${
@@ -1136,22 +1169,45 @@ export default function WebLLMChat({
       return
     }
 
+    let lastChunkRender = 0
+    const CHUNK_RENDER_THROTTLE_MS = 100
+
     const result = await executeFullAITurnSafe({
       userText: userMsg.content,
-      problem: problemRef.current,
+      learningGoal,
+      smallModel: desktopModel ? /:(?:0\.5|1\.5)b$/.test(desktopModel) : activeModelTier(activeBrowserModel) !== '1.5B',
+      problem: turnProblem,
       messages: nextMessages,
-      retrievedNotes: retrieved,
-      createCompletion: (payload) =>
-        engineRef.current!.chat.completions.create({
+      retrievedNotes: [...retrieved, ...(learningContext ? [{ chunk: { text: learningContext } }] : [])],
+      createCompletion: async (payload, options) => desktopModel
+        ? desktopCompletion(desktopModel, payload, options)
+        : engineRef.current!.chat.completions.create({
           messages: payload as ChatCompletionMessageParam[],
-          temperature: 0.7,
-          max_tokens: 256,
+          response_format: options?.responseFormat === 'json' ? { type: 'json_object' } : undefined,
+          temperature: options?.temperature ?? 0.4,
+          max_tokens: options?.maxTokens ?? 768,
+          stream: true,
         }),
+      onChunk: (currentText) => {
+        if (!isCurrentTurn()) return
+        const now = performance.now()
+        if (now - lastChunkRender >= CHUNK_RENDER_THROTTLE_MS) {
+          lastChunkRender = now
+          const streamedMessages = [
+            ...nextMessages,
+            { role: 'assistant' as const, content: currentText },
+          ]
+          messagesRef.current = streamedMessages
+          setMessages(streamedMessages)
+        }
+      },
     })
 
+    if (!isCurrentTurn()) return
+    if (result.lesson) setLearningGoal(result.lesson.goal)
     const finalMessages = [
       ...nextMessages,
-      { role: 'assistant' as const, content: result.finalContent },
+      { role: 'assistant' as const, content: result.finalContent, lesson: result.lesson, replyFailed: result.usedFallback },
     ]
     messagesRef.current = finalMessages
     setMessages(finalMessages)
@@ -1163,12 +1219,13 @@ export default function WebLLMChat({
     })
     setHistory(savedHistory)
     setIsThinking(false)
-  }, [isThinking, mode, recordActivity])
+  }, [isThinking, mode, desktopModel, recordActivity, learningGoal, learningContext, activeBrowserModel])
 
   const clearChat = useCallback(() => {
     // Start a fresh session with a new unique session ID
     const newId = createSessionId('RESET_CHAT')
     const resetMsg = problemRef.current ? buildProblemWelcome(problemRef.current) : GENERIC_WELCOME
+    setLearningGoal('concepts')
     setActiveSessionId(newId, 'RESET_CHAT')
     messagesRef.current = [resetMsg]
     setMessages([resetMsg])
@@ -1195,6 +1252,7 @@ export default function WebLLMChat({
     setSessionId(restoredId)
     messagesRef.current = session.messages
     setMessages(session.messages)
+    setLearningGoal(getLessonState(session.messages, PROBLEMS.find(item => item.id === session.problemId)?.slug).goal)
     // Reset hint display when loading a historical session — do not inject into restored messages
     setHintIndex(-1)
 
@@ -1260,6 +1318,7 @@ export default function WebLLMChat({
   )
 
   // Fresh session: only the initial welcome assistant message, no user messages yet
+  const lessonState = useMemo(() => getLessonState(messages, problem?.slug), [messages, problem?.slug])
   const isFreshSession = messages.length === 1 && messages[0].role === 'assistant'
 
   // Current problem's hints (empty array if no problem or no hints)
@@ -1274,37 +1333,93 @@ export default function WebLLMChat({
     // WebLLMChat sizes naturally to content inside the chamber card.
     // The messages area grows as the conversation deepens and becomes scrollable.
     <div className="flex flex-col">
+      <div className="mb-3 flex flex-wrap items-center gap-3 text-xs">
+        <label htmlFor="learning-goal" className="text-text-secondary">Learning goal</label>
+        <select id="learning-goal" value={learningGoal} disabled={isThinking}
+          onChange={event => setLearningGoal(event.target.value as LearningGoal)}
+          className="rounded-md border border-border-subtle bg-surface-raised p-2 text-text-primary">
+          <option value="concepts">Understand the concept</option>
+          <option value="pseudocode">Plan in plain language</option>
+          <option value="code">Practice coding</option>
+        </select>
+        {learningGoal === 'concepts' && <span className="text-text-tertiary">No coding required.</span>}
+        {lessonState.complete && <span role="status" className="text-success">Concept lesson complete</span>}
+        <div className="ml-auto flex items-center gap-2">
+          <label htmlFor="ai-model-tier" className="text-text-secondary">AI model</label>
+          <select id="ai-model-tier" value={modelSize} disabled={isThinking || mode === 'loading'} onChange={event => {
+            const next = event.target.value as ModelTier
+            setModelSize(next)
+            try { localStorage.setItem('patternos-model-tier', next) } catch { /* Selection still works for this visit. */ }
+          }} className="rounded-md border border-border-subtle bg-surface-raised p-2 text-text-primary">
+            {MODEL_TIERS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+          </select>
+          {mode !== 'loading' && <button onClick={enableFullAI} disabled={isThinking || (mode === 'ai' && !desktopModel && activeModelTier(activeBrowserModel) === modelSize)} className="rounded-md bg-accent/15 px-3 py-2 font-medium text-accent hover:bg-accent/25 disabled:opacity-50">
+            {mode === 'ai' && !desktopModel && activeModelTier(activeBrowserModel) === modelSize ? 'Active' : `${mode === 'ai' ? 'Switch to' : 'Load'} ${modelTierLabel(modelSize)}`}
+          </button>}
+        </div>
+      </div>
+      <details className="mb-4 border-b border-border-subtle pb-3 text-xs">
+        <summary className="w-fit cursor-pointer text-text-tertiary hover:text-text-primary">Chat settings &amp; offline access</summary>
+        <div className="pt-3">
       {/* Mode banner */}
       {mode === 'lite' && (
-        <div className="mb-3 flex items-center justify-between rounded-lg border border-border-subtle bg-surface-raised px-4 py-2.5 text-xs">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-y-2 rounded-lg border border-border-subtle bg-surface-raised px-4 py-2.5 text-xs">
           <span className="text-text-tertiary">
-            Lite Mode active — instant, rule-based hints, works on any device.
+            Lite hints use limited answer matching. Enable AI for a conversation in your own words.
           </span>
-          <button
-            onClick={enableFullAI}
-            className="ml-3 shrink-0 rounded-md bg-accent/15 px-3 py-1.5 font-medium text-accent hover:bg-accent/25 transition-colors"
-          >
-            Enable Full AI (~1.5GB)
-          </button>
         </div>
+      )}
+      <p className="mb-3 text-text-secondary">{MODEL_TIERS.find(item => item.id === modelSize)?.description} Switching loads the selected model and keeps your conversation.</p>
+      {mode === 'ai' && <p className="mb-3 break-all text-text-tertiary">Active model: {desktopModel || activeBrowserModel}</p>}
+      {import.meta.env.DEV && mode !== 'ai' && (
+        <button onClick={enableDesktopAI} className="mb-3 text-xs text-accent underline">
+          Use installed desktop AI (Ollama, local preview)
+        </button>
+      )}
+      {mode === 'lite' && (
+        <p className="mb-3 text-[11px] text-text-muted">
+          The default selects the lowest-memory compatible model. First use downloads model files. WebGPU is required; small models may misunderstand or give weaker explanations. Workshop progress is checked separately.
+        </p>
       )}
       {mode === 'lite' && lowPowerWarning && (
         <div className="mb-3 text-[11px] text-text-muted">
-          Your device looks lighter on resources — Lite Mode is recommended, but Full AI is still available if you want to try it.
+          This device may have limited resources. Try the smallest AI option; the visual workshop remains available if it cannot load.
         </div>
       )}
+          <OfflineLessons />
+        </div>
+      </details>
+      {aiError && <p role="alert" className="mb-3 text-xs text-danger">{aiError}</p>}
       {mode === 'loading' && (
         <div className="mb-3 rounded-lg border border-border-subtle bg-surface-raised px-4 py-2.5 text-xs text-accent animate-pulse">
-          {downloadProgress || 'Starting download...'} — Lite Mode still works while this downloads.
+          {downloadProgress || 'Starting download...'} — Lite hints remain available.
+          <button className="ml-3 underline" onClick={() => { cleanupEngine(); setIsThinking(false); setMode('lite') }}>Cancel loading</button>
+        </div>
+      )}
+      {mode === 'ai' && (
+        <div className="mb-3 flex items-center justify-between rounded-lg border border-border-subtle bg-surface-raised px-4 py-2 text-xs">
+          <span className="text-text-tertiary">
+            <span title={desktopModel || activeBrowserModel}>{desktopModel ? 'Desktop AI' : `${modelTierLabel(activeModelTier(activeBrowserModel))} AI`} active · stays on your device</span>
+          </span>
+          <button
+            onClick={() => {
+              cleanupEngine()
+              setIsThinking(false)
+              setMode('lite')
+            }}
+            className="ml-3 shrink-0 rounded-md bg-surface-hover px-2.5 py-1 text-xs text-text-muted hover:text-text-primary transition-colors"
+          >
+            Switch to Lite Mode
+          </button>
         </div>
       )}
 
       {/* Pedagogical Stage Progress Indicator */}
-      <PedagogicalStageProgress stageInfo={stageInfo} />
+      {mode !== 'ai' && learningGoal === 'code' && <PedagogicalStageProgress stageInfo={stageInfo} />}
 
       {/* Messages — naturally sizes without artificial empty dead air.
           Scrollable as messages accumulate. */}
-      <div className="overflow-y-auto space-y-4 pr-2 overscroll-y-contain max-h-[calc(100vh-340px)] min-h-[60px]">
+      <div className="overflow-y-auto space-y-4 pr-2 overscroll-y-contain max-h-[max(160px,calc(100dvh-560px))] min-h-[60px]">
         {messages.map((msg, i) => (
           <MessageBubble key={i} msg={msg} />
         ))}
@@ -1339,8 +1454,13 @@ export default function WebLLMChat({
           </div>
         )}
 
+        {!isThinking && messages.at(-1)?.replyFailed && (
+          <button className="text-xs text-accent underline" onClick={() => sendMessage(messages.at(-2)?.content ?? '', true)}>
+            Retry reply
+          </button>
+        )}
         {/* Solved action — clear chip, not just a text link */}
-        {!isThinking && lastIsAssistant && !solvedConfirmed && (
+        {learningGoal === 'code' && !isThinking && lastIsAssistant && !solvedConfirmed && (
           <div className="flex justify-start pt-1">
             <button
               onClick={handleSolvedWithConfirm}
@@ -1349,7 +1469,7 @@ export default function WebLLMChat({
               <svg width="11" height="11" viewBox="0 0 11 11" fill="none" className="shrink-0">
                 <path d="M2 5.5l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              Mark as solved
+              Mark coding practice complete
             </button>
           </div>
         )}
@@ -1361,7 +1481,7 @@ export default function WebLLMChat({
               <svg width="11" height="11" viewBox="0 0 11 11" fill="none" className="shrink-0">
                 <path d="M2 5.5l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              Problem solved ✓
+              Coding practice complete (self-assessed) ✓
             </span>
           </div>
         )}

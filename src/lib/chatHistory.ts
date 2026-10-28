@@ -1,6 +1,11 @@
+import type { LessonState, LearningGoal } from './lessonTutor'
+
 export interface StoredMessage {
   role: 'user' | 'assistant'
   content: string
+  lesson?: LessonState
+  learningGoal?: LearningGoal
+  replyFailed?: boolean
 }
 
 export interface ChatSession {
@@ -415,4 +420,4 @@ if (typeof window !== 'undefined') {
 
 
 
-
+

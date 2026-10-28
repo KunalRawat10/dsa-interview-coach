@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import gsap from 'gsap'
+import { useMemo, useState } from 'react'
+import { fitPatternNodes, MAP_WIDTH, MAP_HEIGHT } from '../lib/patternMapLayout'
 import { useProgress } from '../hooks/useProgress'
 
 interface PatternLayout {
@@ -42,15 +42,13 @@ const CONNECTIONS: [string, string][] = [
 ]
 
 function getColor(mastered: number): [number, number, number] {
-  if (mastered > 0.6) return [74, 222, 128]
-  if (mastered > 0.3) return [251, 191, 36]
-  if (mastered > 0) return [248, 113, 113]
-  return [90, 95, 110] // untouched — gray, not red, since "weak" implies attempted-but-struggling
+  if (mastered > 0.6) return [49, 91, 73]
+  if (mastered > 0.3) return [155, 104, 31]
+  if (mastered > 0) return [176, 62, 48]
+  return [95, 111, 96]
 }
 
 export default function Constellation() {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const { progress, recordPatternProgress, decreasePatternProgress } = useProgress()
 
@@ -63,166 +61,51 @@ export default function Constellation() {
       }),
     [progress.patternProgress]
   )
-  const mergedRef = useRef(merged)
-  useEffect(() => {
-    mergedRef.current = merged
-  }, [merged])
-
-  const selectedPattern = merged.find((p) => p.id === selectedId) ?? null
-
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const ctx = gsap.context(() => {
-      gsap.fromTo(
-        el.querySelectorAll('.constellation-title'),
-        { y: 20, opacity: 0 },
-        { y: 0, opacity: 1, duration: 0.6, ease: 'power3.out' }
-      )
-      gsap.fromTo(
-        el.querySelectorAll('.constellation-canvas-wrap'),
-        { scale: 0.95, opacity: 0 },
-        { scale: 1, opacity: 1, duration: 0.8, ease: 'power2.out', delay: 0.2 }
-      )
-      gsap.fromTo(
-        el.querySelectorAll('.constellation-panel'),
-        { x: 30, opacity: 0 },
-        { x: 0, opacity: 1, duration: 0.6, ease: 'power2.out', delay: 0.4 }
-      )
-    }, el)
-    return () => ctx.revert()
-  }, [])
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx2d = canvas.getContext('2d')
-    if (!ctx2d) return
-
-    const resize = () => {
-      canvas.width = canvas.offsetWidth * window.devicePixelRatio
-      canvas.height = canvas.offsetHeight * window.devicePixelRatio
-      ctx2d.scale(window.devicePixelRatio, window.devicePixelRatio)
-    }
-    resize()
-
-    const mouse = { x: -1000, y: -1000 }
-    let hoveredId: string | null = null
-    let time = 0
-    let raf: number
-
-    const onMove = (e: MouseEvent) => {
-      const rect = canvas.getBoundingClientRect()
-      mouse.x = e.clientX - rect.left
-      mouse.y = e.clientY - rect.top
-    }
-    const onClick = () => {
-      if (hoveredId) setSelectedId(hoveredId)
-    }
-
-    canvas.addEventListener('mousemove', onMove)
-    canvas.addEventListener('click', onClick)
-    window.addEventListener('resize', resize)
-
-    const draw = () => {
-      time += 0.015
-      const w = canvas.offsetWidth
-      const h = canvas.offsetHeight
-      ctx2d.clearRect(0, 0, w, h)
-      hoveredId = null
-
-      const current = mergedRef.current
-
-      for (const [from, to] of CONNECTIONS) {
-        const a = current.find((p) => p.id === from)!
-        const b = current.find((p) => p.id === to)!
-        const avg = (a.mastered + b.mastered) / 2
-        const ax = a.x * w
-        const ay = a.y * h + Math.sin(time + a.x * 5) * 2
-        const bx = b.x * w
-        const by = b.y * h + Math.sin(time + b.x * 5) * 2
-
-        ctx2d.beginPath()
-        ctx2d.moveTo(ax, ay)
-        ctx2d.lineTo(bx, by)
-        ctx2d.strokeStyle = 'rgba(107, 140, 255, ' + (0.06 + avg * 0.3) + ')'
-        ctx2d.lineWidth = 1
-        ctx2d.stroke()
-      }
-
-      for (const p of current) {
-        const x = p.x * w
-        const y = p.y * h + Math.sin(time + p.x * 8) * 3
-        const r = 5 + p.mastered * 7
-        const dist = Math.hypot(mouse.x - x, mouse.y - y)
-        const isHovered = dist < r + 10
-        if (isHovered) hoveredId = p.id
-
-        const [cr, cg, cb] = getColor(p.mastered)
-
-        const g = ctx2d.createRadialGradient(x, y, 0, x, y, r * 4)
-        g.addColorStop(0, 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (0.08 + p.mastered * 0.2) + ')')
-        g.addColorStop(1, 'rgba(0,0,0,0)')
-        ctx2d.fillStyle = g
-        ctx2d.beginPath()
-        ctx2d.arc(x, y, r * 4, 0, Math.PI * 2)
-        ctx2d.fill()
-
-        ctx2d.beginPath()
-        ctx2d.arc(x, y, r, 0, Math.PI * 2)
-        ctx2d.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (0.35 + p.mastered * 0.55) + ')'
-        ctx2d.fill()
-        ctx2d.strokeStyle = isHovered
-          ? 'rgba(255,255,255,0.9)'
-          : 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (0.4 + p.mastered * 0.5) + ')'
-        ctx2d.lineWidth = isHovered ? 2 : 1
-        ctx2d.stroke()
-
-        ctx2d.fillStyle = isHovered ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.45)'
-        ctx2d.font = (isHovered ? '500' : '400') + ' 11px system-ui, sans-serif'
-        ctx2d.textAlign = 'center'
-        ctx2d.fillText(p.name, x, y + r + 14)
-      }
-
-      raf = requestAnimationFrame(draw)
-    }
-
-    draw()
-
-    return () => {
-      cancelAnimationFrame(raf)
-      canvas.removeEventListener('mousemove', onMove)
-      canvas.removeEventListener('click', onClick)
-      window.removeEventListener('resize', resize)
-    }
-  }, [])
+  const nodes = useMemo(() => fitPatternNodes(merged), [merged])
+  const positions = new Map(nodes.map(node => [node.id, node]))
+  const selectedPattern = merged.find(pattern => pattern.id === selectedId) ?? null
 
   const selectedColor = selectedPattern ? getColor(selectedPattern.mastered) : [107, 140, 255]
 
   return (
-    <div ref={containerRef} className="space-y-6">
-      <div className="constellation-title text-center space-y-2">
-        <h2 className="text-3xl font-medium">Algorithmic Constellation</h2>
-        <p className="text-text-tertiary text-sm">Hover nodes to explore. Click to see your mastery details.</p>
+    <div className="space-y-6">
+      <div className="constellation-title space-y-2">
+        <h2 className="text-3xl font-medium">Your pattern map</h2>
+        <p className="text-text-tertiary text-sm">Follow the connections. Select a pattern to explore it.</p>
       </div>
 
-      <div className="flex gap-4">
-        <div className="constellation-canvas-wrap flex-1 h-[500px] rounded-xl border border-border-subtle overflow-hidden relative bg-surface/50">
-          <canvas ref={canvasRef} className="w-full h-full block" />
-          <div className="absolute bottom-3 left-3 flex gap-4 text-xs bg-void/80 px-3 py-2 rounded-lg backdrop-blur">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-success" /> Mastered
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-warning" /> Learning
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-danger" /> Weak
-            </span>
+      <div className="pattern-map-layout">
+        <div className="workspace-panel pattern-map-graph">
+          <div className="pattern-map-key text-xs text-text-secondary" aria-label="Map legend">
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-success" /> Mastered</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-warning" /> Learning</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-danger" /> Weak</span>
+            <span className="text-text-muted">Select a node to explore</span>
+          </div>
+          <div className="pattern-map-viewport">
+            <svg className="pattern-map-svg" viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`} role="group" aria-label="Algorithm pattern map" preserveAspectRatio="xMidYMid meet">
+              {CONNECTIONS.map(([from, to]) => {
+                const a = positions.get(from)!, b = positions.get(to)!
+                const active = selectedId === from || selectedId === to
+                return <line key={`${from}-${to}`} x1={a.px} y1={a.py} x2={b.px} y2={b.py} stroke={active ? '#ad4c2c' : '#c4cbbc'} strokeWidth={active ? 1.8 : 1.2} />
+              })}
+              {nodes.map(node => {
+                const color = `rgb(${getColor(node.mastered).join(',')})`
+                return <g key={node.id} className="pattern-map-node" role="button" tabIndex={0} aria-label={`${node.name}, ${Math.round(node.mastered * 100)} percent mastery`} aria-pressed={selectedId === node.id} onClick={() => setSelectedId(node.id)} onKeyDown={event => {
+                  if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedId(node.id) }
+                }}>
+                  <title>{node.name}</title>
+                  <circle cx={node.px} cy={node.py} r="22" fill="transparent" />
+                  <circle className="pattern-node-ring" cx={node.px} cy={node.py} r="16" fill="#f5ebe0" stroke="#ad4c2c" strokeWidth="1.5" />
+                  <circle cx={node.px} cy={node.py} r={7 + node.mastered * 4} fill={color} />
+                  <text x={node.px} y={node.py + 29} textAnchor="middle" fill="#414d3f" fontFamily="Segoe UI, sans-serif" fontSize="13">{node.name}</text>
+                </g>
+              })}
+            </svg>
           </div>
         </div>
 
-        <div className="constellation-panel w-72 rounded-xl border border-border-subtle bg-surface-raised p-5 space-y-4">
+        <div className="workspace-panel pattern-map-panel p-5 space-y-4">
           {selectedPattern ? (
             <>
               <div>
@@ -287,7 +170,7 @@ export default function Constellation() {
               )}
             </>
           ) : (
-            <div className="h-full flex flex-col items-center justify-center text-text-muted space-y-2">
+            <div className="min-h-[270px] flex flex-col items-center justify-center text-text-muted space-y-2">
               <div className="text-3xl">✦</div>
               <p className="text-sm">Select a pattern</p>
               <p className="text-xs text-text-muted">Click any node on the graph</p>

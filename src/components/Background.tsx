@@ -67,6 +67,7 @@ class SilkErrorBoundary extends Component<{ children: ReactNode; fallback: React
 export default function Background() {
   const [useStaticFallback] = useState(isLowPowerDevice)
   const [isVisible, setIsVisible] = useState(!document.hidden)
+  const [isAiActive, setIsAiActive] = useState(false)
 
   // Unmounting the Canvas fully stops its render loop — cheaper than trying
   // to pause internals, and Silk's own source doesn't expose a pause hook.
@@ -76,7 +77,17 @@ export default function Background() {
     return () => document.removeEventListener('visibilitychange', handleVisibility)
   }, [])
 
-  if (useStaticFallback) {
+  // Isolate Silk animation when Full AI is loading or active to prevent GPU/main-thread contention
+  useEffect(() => {
+    const handleAiMode = (e: Event) => {
+      const custom = e as CustomEvent<{ active: boolean }>
+      setIsAiActive(Boolean(custom.detail?.active))
+    }
+    window.addEventListener('patternos:ai-mode', handleAiMode)
+    return () => window.removeEventListener('patternos:ai-mode', handleAiMode)
+  }, [])
+
+  if (useStaticFallback || isAiActive) {
     return <StaticGradientFallback />
   }
 

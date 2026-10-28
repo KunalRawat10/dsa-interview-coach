@@ -9,10 +9,10 @@ interface NavbarProps {
 
 const tabs: { id: TabId; label: string }[] = [
   { id: 'home', label: 'Home' },
-  { id: 'constellation', label: 'Constellation' },
+  { id: 'constellation', label: 'Patterns' },
   { id: 'practice', label: 'Practice' },
   { id: 'complexity', label: 'Complexity' },
-  { id: 'knowledge', label: 'Knowledge' },
+  { id: 'knowledge', label: 'Notes' },
 ]
 
 export default function Navbar({ activeTab, onTabChange }: NavbarProps) {
@@ -41,8 +41,8 @@ export default function Navbar({ activeTab, onTabChange }: NavbarProps) {
   return (
     <header
       className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
-        scrolled
-          ? 'border-b border-ink-700 bg-ink-950/85 backdrop-blur-md shadow-lg shadow-black/40'
+        scrolled || activeTab !== 'home'
+          ? 'border-b border-ink-700 bg-ink-950 shadow-sm shadow-black/20'
           : 'border-b border-transparent bg-transparent'
       }`}
     >
@@ -57,7 +57,7 @@ export default function Navbar({ activeTab, onTabChange }: NavbarProps) {
         >
           <Logo />
           <span className="font-display text-lg sm:text-xl font-bold tracking-tight text-paper-50">
-            PatternOS
+            PatternOS<span className="text-[#ad4c2c]">.</span>
           </span>
         </button>
 
@@ -68,10 +68,11 @@ export default function Navbar({ activeTab, onTabChange }: NavbarProps) {
             return (
               <button
                 key={tab.id}
+                aria-current={isActive ? 'page' : undefined}
                 onClick={() => onTabChange(tab.id)}
                 className={`px-3.5 py-1.5 text-xs sm:text-sm font-sans font-medium rounded-md transition-colors cursor-pointer ${
                   isActive
-                    ? 'text-paper-50 bg-ink-800 border border-ink-600'
+                    ? 'text-accent-300 bg-accent-500/10 border border-accent-500/25'
                     : 'text-paper-300 hover:text-paper-50 hover:bg-ink-900/60'
                 }`}
               >
@@ -87,7 +88,7 @@ export default function Navbar({ activeTab, onTabChange }: NavbarProps) {
             onClick={() => onTabChange('practice')}
             className="rounded-lg bg-accent-500 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-accent-400 hover:shadow-lg hover:shadow-accent-500/20 cursor-pointer"
           >
-            <span>Start Learning</span>
+            <span>Open workbook ↗</span>
           </button>
         </div>
 
@@ -132,7 +133,7 @@ export default function Navbar({ activeTab, onTabChange }: NavbarProps) {
               }}
               className="mt-2 rounded-lg bg-accent-500 px-4 py-2 text-center text-sm font-medium text-white cursor-pointer"
             >
-              Start Learning
+              Open workbook ↗
             </button>
           </nav>
         </div>
@@ -143,14 +144,10 @@ export default function Navbar({ activeTab, onTabChange }: NavbarProps) {
 
 function Logo() {
   return (
-    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" className="shrink-0">
-      <rect width="28" height="28" rx="7" fill="#111317" stroke="#2C313A" strokeWidth="1" />
-      <circle cx="9" cy="9" r="2.5" fill="#4B8FE7" />
-      <circle cx="19" cy="9" r="2.5" fill="#2E72D0" />
-      <circle cx="14" cy="19" r="2.5" fill="#C9A961" />
-      <line x1="9" y1="9" x2="19" y2="9" stroke="#2C313A" strokeWidth="1.5" />
-      <line x1="9" y1="9" x2="14" y2="19" stroke="#2C313A" strokeWidth="1.5" />
-      <line x1="19" y1="9" x2="14" y2="19" stroke="#2C313A" strokeWidth="1.5" />
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" className="shrink-0" aria-hidden="true">
+      <rect x="1" y="1" width="26" height="26" rx="2" fill="#315b49" />
+      <path d="M8 21V7h6a4 4 0 010 8H8" stroke="#fffdf8" strokeWidth="1.6" strokeLinecap="square" />
+      <path d="M21 4v4" stroke="#d5a978" strokeWidth="2" />
     </svg>
   )
 }

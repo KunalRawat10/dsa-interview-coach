@@ -69,7 +69,7 @@ export const ProblemSelector = memo(function ProblemSelector({
   const hasActiveFilters = searchQuery.trim() !== '' || selectedCategory !== 'All' || selectedDifficulty !== 'All'
 
   return (
-    <div className="mb-4 rounded-xl border border-border-hover bg-surface-raised">
+    <div className="workspace-panel mb-4">
       {/* Always-visible header row */}
       <div className="flex items-center px-3 py-3 gap-2">
         {/* Prev arrow */}
@@ -111,7 +111,7 @@ export const ProblemSelector = memo(function ProblemSelector({
         {/* Progress + chevron */}
         <div className="flex items-center gap-2.5 shrink-0">
           <span className="font-mono text-[10px] text-text-muted hidden sm:block">
-            {totalSolved}&thinsp;/&thinsp;{PROBLEMS.length}&ensp;solved
+            {totalSolved}&thinsp;/&thinsp;{PROBLEMS.length}&ensp;coded
           </span>
           <button
             onClick={() => setOpen((v) => !v)}

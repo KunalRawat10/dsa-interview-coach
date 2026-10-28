@@ -90,12 +90,12 @@ export function renderSocraticResponse(
 
   // ── 6. OFFER CODE IMPLEMENTATION ───────────────────────────────────────────
   if (action === 'OFFER_CODE_IMPLEMENTATION') {
-    if (cognitiveTask === 'SUMMARIZE' || cognitiveTask === 'TRACE' || isRePrompt) {
-      const timeComp = problem?.expectedTime ?? 'O(n)'
-      const spaceComp = problem?.expectedSpace ?? 'O(n)'
-      return `Excellent work! That complete implementation runs in ${timeComp} time and ${spaceComp} space, satisfying the problem constraints.`
+    if (interpretation.hasCode && (cognitiveTask === 'SUMMARIZE' || cognitiveTask === 'TRACE')) {
+      return `You have shared code; it has not been executed or verified here. Can you trace it on ${exInput}, including the final return when no match is found?`
     }
-    return `Yes — that covers the complete logic: setup, lookup on hit, insert on miss, and return on completion. Can you write the code?`
+    return isRePrompt
+      ? `Describing the algorithm is enough to start coding; you do not need another particular phrase. Share your implementation, or enable conversational AI if you would like a walkthrough first.`
+      : `You have described the operational steps. Would you like to write the code, or work through an example first?`
   }
 
   // ── 7. PROBE ADJACENT RELATIONSHIP & DEEPEN REASONING ──────────────────────
