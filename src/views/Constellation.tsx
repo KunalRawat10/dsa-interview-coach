@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useRef } from 'react'
+import { useVisibleMotion } from '../hooks/useVisibleMotion'
 import { fitPatternNodes, MAP_WIDTH, MAP_HEIGHT } from '../lib/patternMapLayout'
 import { useProgress } from '../hooks/useProgress'
 
@@ -50,6 +51,9 @@ function getColor(mastered: number): [number, number, number] {
 
 export default function Constellation() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [paused, setPaused] = useState(false)
+  const mapRef = useRef<HTMLDivElement>(null)
+  const motionActive = useVisibleMotion(mapRef, !paused)
   const { progress, recordPatternProgress, decreasePatternProgress } = useProgress()
 
   // Live-merged patterns: layout stays static, mastery/solved come from real state.
@@ -75,19 +79,20 @@ export default function Constellation() {
       </div>
 
       <div className="pattern-map-layout">
-        <div className="workspace-panel pattern-map-graph">
+        <div ref={mapRef} className="workspace-panel pattern-map-graph" data-motion-active={motionActive}>
           <div className="pattern-map-key text-xs text-text-secondary" aria-label="Map legend">
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-success" /> Mastered</span>
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-warning" /> Learning</span>
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-danger" /> Weak</span>
             <span className="text-text-muted">Select a node to explore</span>
+            <button className="pattern-motion-toggle" aria-pressed={paused} onClick={() => setPaused(value => !value)}>{paused ? 'Resume motion' : 'Pause motion'}</button>
           </div>
           <div className="pattern-map-viewport">
             <svg className="pattern-map-svg" viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`} role="group" aria-label="Algorithm pattern map" preserveAspectRatio="xMidYMid meet">
               {CONNECTIONS.map(([from, to]) => {
                 const a = positions.get(from)!, b = positions.get(to)!
                 const active = selectedId === from || selectedId === to
-                return <line key={`${from}-${to}`} x1={a.px} y1={a.py} x2={b.px} y2={b.py} stroke={active ? '#ad4c2c' : '#c4cbbc'} strokeWidth={active ? 1.8 : 1.2} />
+                return <g key={`${from}-${to}`} aria-hidden="true"><line className="pattern-map-edge" pathLength="1" x1={a.px} y1={a.py} x2={b.px} y2={b.py} stroke={active ? '#ad4c2c' : '#c4cbbc'} strokeWidth={active ? 1.8 : 1.2} /><line className={`pattern-map-flow${active ? ' is-connected' : ''}`} x1={a.px} y1={a.py} x2={b.px} y2={b.py} stroke={active ? '#ad4c2c' : '#7d947e'} strokeWidth="2" strokeDasharray="2 34" /></g>
               })}
               {nodes.map(node => {
                 const color = `rgb(${getColor(node.mastered).join(',')})`
@@ -96,6 +101,7 @@ export default function Constellation() {
                 }}>
                   <title>{node.name}</title>
                   <circle cx={node.px} cy={node.py} r="22" fill="transparent" />
+                  <circle className="pattern-node-halo" cx={node.px} cy={node.py} r="13" fill={color} style={{ animationDelay: `${nodes.indexOf(node) * -.4}s` }} aria-hidden="true" />
                   <circle className="pattern-node-ring" cx={node.px} cy={node.py} r="16" fill="#f5ebe0" stroke="#ad4c2c" strokeWidth="1.5" />
                   <circle cx={node.px} cy={node.py} r={7 + node.mastered * 4} fill={color} />
                   <text x={node.px} y={node.py + 29} textAnchor="middle" fill="#414d3f" fontFamily="Segoe UI, sans-serif" fontSize="13">{node.name}</text>
@@ -107,7 +113,7 @@ export default function Constellation() {
 
         <div className="workspace-panel pattern-map-panel p-5 space-y-4">
           {selectedPattern ? (
-            <>
+            <div key={selectedPattern.id} className="pattern-detail-enter space-y-4">
               <div>
                 <h3 className="text-lg font-medium mb-1">{selectedPattern.name}</h3>
                 <p className="text-sm text-text-tertiary leading-relaxed">{selectedPattern.desc}</p>
@@ -168,7 +174,7 @@ export default function Constellation() {
                   Not started yet — practice this in the Socratic Chamber or mark it here as you go.
                 </p>
               )}
-            </>
+            </div>
           ) : (
             <div className="min-h-[270px] flex flex-col items-center justify-center text-text-muted space-y-2">
               <div className="text-3xl">✦</div>

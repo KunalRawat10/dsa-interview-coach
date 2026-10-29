@@ -1,5 +1,6 @@
 import type { TabId } from '../../App'
 import { useEffect, useRef, useState } from 'react'
+import { useVisibleMotion } from '../../hooks/useVisibleMotion'
 
 const TOOLS: { number: string; title: string; description: string; tab: TabId }[] = [
   { number: '01', title: 'The practice room', description: 'Talk through a problem. Take it one idea at a time.', tab: 'practice' },
@@ -10,6 +11,9 @@ const TOOLS: { number: string; title: string; description: string; tab: TabId }[
 
 export default function FieldHome({ onNavigate }: { onNavigate: (tab: TabId) => void }) {
   const homeRef = useRef<HTMLDivElement>(null)
+  const noteRef = useRef<HTMLElement>(null)
+  const [illustrationPaused, setIllustrationPaused] = useState(false)
+  const illustrationActive = useVisibleMotion(noteRef, !illustrationPaused)
   const [example, setExample] = useState(0)
   const [prediction, setPrediction] = useState<boolean | null>(null)
   const examples = [[2,5,2], [2,5,8], [0,-1,0], [7]]
@@ -44,17 +48,19 @@ export default function FieldHome({ onNavigate }: { onNavigate: (tab: TabId) => 
         <div className="field-actions"><button className="field-primary" onClick={() => onNavigate('practice')}>Find your starting point <span aria-hidden="true">↗</span></button><a className="field-secondary" href="#inside">Take a look inside <span aria-hidden="true">↓</span></a></div>
         <p className="field-footnote">Start with an idea. The code can come later.</p>
       </div>
-      <aside className="field-note" aria-label="A worked example of duplicate detection">
+      <aside ref={noteRef} className="field-note" data-motion-active={illustrationActive} aria-label="A worked example of duplicate detection">
         <div className="field-note-header"><span>FROM THE WORKBOOK</span><span>NO. 001</span></div>
         <div className="field-note-body">
           <p className="field-note-category">Observation / Repeated values</p>
           <h2>Have we seen<br />this before?</h2>
           <div className="field-array" aria-label="The values 4, 7, and 4; the first and last match"><span className="field-match">4</span><span>7</span><span className="field-match">4</span></div>
+          <div className="field-comparison-track" aria-hidden="true"><span /><span /><span /></div>
+          <div className="field-walkthrough" aria-hidden="true"><span>01 / Notice the first 4</span><span>02 / Compare the next value</span><span>03 / Another 4. A match.</span></div>
           <p className="field-annotation">same value, different place</p>
           <p className="field-note-explanation">The last 4 matches the first. That’s all the evidence we need to know a repeat exists.</p>
           <div className="field-note-answer"><span>THE IDEA</span><strong>Check what came before.</strong></div>
         </div>
-        <div className="field-note-footer">A small example. A useful pattern.</div>
+        <div className="field-note-footer"><span>A small example. A useful pattern.</span><button onClick={() => setIllustrationPaused(value => !value)} aria-pressed={illustrationPaused}>{illustrationPaused ? 'Play illustration' : 'Pause illustration'}</button></div>
       </aside>
     </section>
     <section className="field-method" aria-label="How to learn here"><div data-reveal><span>01 / NOTICE</span><p>Work with a small example.</p></div><div data-reveal><span>02 / EXPLAIN</span><p>Put the idea in your own words.</p></div><div data-reveal><span>03 / APPLY</span><p>Try it somewhere new.</p></div></section>
@@ -67,7 +73,7 @@ export default function FieldHome({ onNavigate }: { onNavigate: (tab: TabId) => 
       <div className="field-mini-exercise">
         <div className="field-mini-values" aria-label={`Example values: ${values.join(', ')}`}>{values.map((value,index) => <span key={`${example}-${index}`}>{value}</span>)}</div>
         <div className="field-mini-actions"><button onClick={() => setPrediction(true)}>There’s a repeat</button><button onClick={() => setPrediction(false)}>All different</button></div>
-        <p role="status" className="field-mini-feedback">{prediction === null ? 'Make a prediction, then see why.' : prediction === hasRepeat ? hasRepeat ? 'Exactly. Two positions contain the same value, so the answer is true.' : 'Every value is different. After checking them all, the answer is false.' : hasRepeat ? 'Look again: the first and last values match. That gives us a repeat.' : 'Check each position: none matches an earlier value. There is no repeat.'}</p>
+        <p key={`${example}-${prediction}`} role="status" className="field-mini-feedback field-feedback-enter">{prediction === null ? 'Make a prediction, then see why.' : prediction === hasRepeat ? hasRepeat ? 'Exactly. Two positions contain the same value, so the answer is true.' : 'Every value is different. After checking them all, the answer is false.' : hasRepeat ? 'Look again: the first and last values match. That gives us a repeat.' : 'Check each position: none matches an earlier value. There is no repeat.'}</p>
         <button className="field-mini-next" onClick={() => { setExample((example + 1) % examples.length); setPrediction(null) }}>Try another example <span aria-hidden="true">↗</span></button>
       </div>
     </section>
