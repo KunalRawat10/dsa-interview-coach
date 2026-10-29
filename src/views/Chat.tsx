@@ -75,7 +75,7 @@ export default function Chat() {
               status.includes('ready') ? 'bg-success' : status.includes('failed') ? 'bg-danger' : 'bg-warning animate-pulse'
             }`}
           />
-          <span className="text-text-muted" title={status}>{status.includes('ready') ? 'AI ready' : status.includes('download') || status.includes('Downloading') ? 'Loading AI' : 'Basic hints'}</span>
+          <span className="text-text-muted" title={status}>{status.includes('ready') ? 'AI ready' : /loading|download|connecting|starting/i.test(status) ? 'Loading AI' : 'Basic hints'}</span>
         </div>
       </div>
 

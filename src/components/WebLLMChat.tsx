@@ -30,10 +30,13 @@ import {
 } from '../lib/activeThread'
 import { generateLessonTurn, getLessonState, prepareUserTurn, type LearningGoal, type LessonState, type LessonMessage } from '../lib/lessonTutor'
 import { desktopCompletion, findDesktopModel } from '../lib/desktopTutor'
+import { withModelDeadline, browserLoadProgress } from '../lib/modelDeadline'
 import { type TutorChunk, type TutorCompletionOptions } from '../lib/conversationalTutor'
 import { generateSmallModelTurn, smallestCompatibleModel } from '../lib/smallModel'
 import OfflineLessons from './OfflineLessons'
 import { MODEL_TIERS, activeModelTier, modelTierLabel, type ModelTier } from '../lib/modelTiers'
+import { findTutorGpu, GpuUnavailableError, type TutorGpu } from '../lib/browserGpu'
+import { CpuTutorClient, CPU_MODEL_ID } from '../lib/cpuTutor'
 export { buildSystemPrompt, buildChatHistoryPayload } from '../lib/conversationalTutor'
 
 type Message = LessonMessage
@@ -84,6 +87,8 @@ export interface ExecuteFullAITurnParams {
   >
   learningGoal?: LearningGoal
   smallModel?: boolean
+  timeoutMs?: number
+  onTimeout?: () => void
   onStepEvaluated?: (step: SocraticEvaluationTrace) => void
   onChunk?: (currentText: string) => void
 }
@@ -104,6 +109,8 @@ export async function executeFullAITurnSafe({
   onStepEvaluated,
   learningGoal = 'concepts',
   smallModel = false,
+  timeoutMs = 120000,
+  onTimeout,
   onChunk,
 }: ExecuteFullAITurnParams): Promise<ExecuteFullAITurnResult> {
   // Open conversation must not wait for or be gated by the Lite phrase matcher.
@@ -111,7 +118,7 @@ export async function executeFullAITurnSafe({
   try {
     const notes = retrievedNotes.map(r => r.chunk.text).join('\n\n')
     void userText
-    const result = await (smallModel ? generateSmallModelTurn : generateLessonTurn)(messages, problem, learningGoal, createCompletion, notes)
+    const result = await withModelDeadline(() => (smallModel ? generateSmallModelTurn : generateLessonTurn)(messages, problem, learningGoal, createCompletion, notes), timeoutMs, onTimeout)
     onChunk?.(result.reply)
     return { finalContent: result.reply, lesson: result.lesson, usedFallback: false }
   } catch (err) {
@@ -899,6 +906,8 @@ export default function WebLLMChat({
   const [mode, setMode] = useState<Mode>('lite')
   const [downloadProgress, setDownloadProgress] = useState('')
   const [aiError, setAiError] = useState('')
+  const [gpuHelp, setGpuHelp] = useState(false)
+  const [cpuActive, setCpuActive] = useState(false)
   const [desktopModel, setDesktopModel] = useState('')
   const modelLoadId = useRef(0)
   const [modelSize, setModelSize] = useState<ModelTier>(() => {
@@ -915,6 +924,7 @@ export default function WebLLMChat({
 
   const engineRef = useRef<WebWorkerMLCEngine | MLCEngine | null>(null)
   const workerRef = useRef<Worker | null>(null)
+  const cpuRef = useRef<CpuTutorClient | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const isInitialMount = useRef(true)
   const lastStatusRef = useRef<string>('')
@@ -929,6 +939,8 @@ export default function WebLLMChat({
 
   const cleanupEngine = useCallback(() => {
     modelLoadId.current++
+    cpuRef.current?.dispose()
+    cpuRef.current = null
     if (engineRef.current) {
       engineRef.current.unload().catch((err) => {
         console.warn('Error unloading WebLLM engine:', err)
@@ -1023,27 +1035,25 @@ export default function WebLLMChat({
   }, [mode, downloadProgress, onStatusChange])
 
   useEffect(() => {
-    if (isInitialMount.current) {
-      isInitialMount.current = false
-      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
-    } else {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }
+    const thread = messagesEndRef.current?.parentElement
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    // Scroll the conversation itself, not the entire page under the fixed nav.
+    thread?.scrollTo({ top: thread.scrollHeight, behavior: isInitialMount.current || reduceMotion ? 'auto' : 'smooth' })
+    isInitialMount.current = false
   }, [messages])
 
   const enableFullAI = useCallback(async () => {
     cleanupEngine()
+    setCpuActive(false)
     setIsThinking(false)
     setDesktopModel('')
     const loadId = modelLoadId.current
     setAiError('')
+    setGpuHelp(false)
     setMode('loading')
     try {
-      if (!('gpu' in navigator)) throw new Error('This browser does not support WebGPU. Try a current Chrome or Edge browser with hardware acceleration enabled.')
+      const adapter = await findTutorGpu((navigator as Navigator & { gpu?: TutorGpu }).gpu, window.isSecureContext, modelSize === '7B')
       const webllmModule = await import('@mlc-ai/web-llm')
-      const gpu = (navigator as Navigator & { gpu: { requestAdapter: () => Promise<{ features: ReadonlySet<string> } | null> } }).gpu
-      const adapter = await gpu.requestAdapter()
-      if (!adapter) throw new Error('No compatible graphics adapter was found. The visual workshop still works without AI.')
       const selectedModel = modelSize === 'smallest'
         ? smallestCompatibleModel(webllmModule.prebuiltAppConfig.model_list, adapter.features)
         : webllmModule.prebuiltAppConfig.model_list.find(item => item.model_id === `Qwen2.5-${modelSize}-Instruct-q4f32_1-MLC`)!
@@ -1069,7 +1079,7 @@ export default function WebLLMChat({
             const now = Date.now()
             if (pct >= 100 || now - lastProgressUpdate >= THROTTLE_MS) {
               lastProgressUpdate = now
-              setDownloadProgress(`Downloading model... ${pct}%`)
+            setDownloadProgress(browserLoadProgress(report.progress, report.text))
             }
           },
         },
@@ -1080,6 +1090,12 @@ export default function WebLLMChat({
         return
       }
       engineRef.current = engine
+      if (modelSize === '7B') {
+        setDownloadProgress('Checking that Advanced 7B can generate a reply…')
+        await withModelDeadline(() => engine.chat.completions.create({ messages: [{ role: 'user', content: 'Reply with the word Ready.' }], max_tokens: 8, stream: false }), 60000, () => engine.interruptGenerate())
+        if (loadId !== modelLoadId.current) return
+        await engine.resetChat()
+      }
       setMode('ai')
       setDownloadProgress('')
     } catch (err) {
@@ -1089,12 +1105,38 @@ export default function WebLLMChat({
       setIsThinking(false)
       setMode('lite')
       setAiError(err instanceof Error ? err.message : 'The local model could not load. Check your connection and GPU support, then retry.')
+      setGpuHelp(err instanceof GpuUnavailableError)
       setDownloadProgress('')
     }
   }, [cleanupEngine, modelSize])
 
+  const enableCpuAI = useCallback(async () => {
+    cleanupEngine()
+    const loadId = modelLoadId.current
+    setIsThinking(false); setDesktopModel(''); setCpuActive(false)
+    setAiError(''); setGpuHelp(false); setModelSize('smallest')
+    try { localStorage.setItem('patternos-model-tier', 'smallest') } catch { /* CPU selection still works for this visit. */ }
+    setMode('loading'); setDownloadProgress('Loading CPU Light — no graphics adapter needed…')
+    try {
+      const client = new CpuTutorClient(new Worker(new URL('../workers/cpuTutor.worker.ts', import.meta.url), { type: 'module' }), progress => {
+        if (loadId === modelLoadId.current) setDownloadProgress(progress)
+      }, message => {
+        if (loadId === modelLoadId.current) { setCpuActive(false); setMode('lite'); setAiError(message) }
+      })
+      cpuRef.current = client
+      await client.load()
+      if (loadId !== modelLoadId.current) return
+      setActiveBrowserModel(CPU_MODEL_ID); setCpuActive(true); setMode('ai'); setDownloadProgress('')
+    } catch (error) {
+      if (loadId !== modelLoadId.current) return
+      cleanupEngine(); setCpuActive(false); setMode('lite'); setDownloadProgress('')
+      setAiError(error instanceof Error ? error.message : 'CPU Light could not load. Check your connection and retry.')
+    }
+  }, [cleanupEngine])
+
   const enableDesktopAI = useCallback(async () => {
     cleanupEngine()
+    setCpuActive(false)
     setIsThinking(false)
     const loadId = modelLoadId.current
     setAiError('')
@@ -1143,7 +1185,7 @@ export default function WebLLMChat({
 
     if (!isCurrentTurn()) return
 
-    if (mode !== 'ai' || (!desktopModel && !engineRef.current)) {
+    if (mode !== 'ai' || (!desktopModel && !engineRef.current && !cpuRef.current)) {
       // Basic hints must not silently download a second embedding model.
       const base = liteRespond(userMsg.content, turnProblem, nextMessages)
 
@@ -1175,18 +1217,31 @@ export default function WebLLMChat({
     const result = await executeFullAITurnSafe({
       userText: userMsg.content,
       learningGoal,
-      smallModel: desktopModel ? /:(?:0\.5|1\.5)b$/.test(desktopModel) : activeModelTier(activeBrowserModel) !== '1.5B',
+      timeoutMs: desktopModel || cpuActive ? 120000 : 90000,
+      onTimeout: () => {
+        if (!isCurrentTurn()) return
+        engineRef.current?.interruptGenerate()
+        workerRef.current?.terminate()
+        workerRef.current = null
+        engineRef.current = null
+        setMode('lite')
+        setAiError('The model did not reply in time. Your chat is saved. Try a smaller browser model or installed desktop AI.')
+      },
+      smallModel: cpuActive || (desktopModel ? /:(?:0\.5|1\.5)b$/.test(desktopModel) : !['1.5B', '7B'].includes(activeModelTier(activeBrowserModel))),
       problem: turnProblem,
       messages: nextMessages,
       retrievedNotes: [...retrieved, ...(learningContext ? [{ chunk: { text: learningContext } }] : [])],
-      createCompletion: async (payload, options) => desktopModel
+      createCompletion: async (payload, options) => cpuActive
+        ? cpuRef.current!.complete(payload)
+        : desktopModel
         ? desktopCompletion(desktopModel, payload, options)
         : engineRef.current!.chat.completions.create({
           messages: payload as ChatCompletionMessageParam[],
-          response_format: options?.responseFormat === 'json' ? { type: 'json_object' } : undefined,
+          response_format: options?.responseFormat === 'json' ? { type: 'json_object', schema: options.jsonSchema ? JSON.stringify(options.jsonSchema) : undefined } : undefined,
           temperature: options?.temperature ?? 0.4,
           max_tokens: options?.maxTokens ?? 768,
-          stream: true,
+          // Teaching replies are validated before display, so avoid a second streaming protocol here.
+          stream: false,
         }),
       onChunk: (currentText) => {
         if (!isCurrentTurn()) return
@@ -1219,7 +1274,7 @@ export default function WebLLMChat({
     })
     setHistory(savedHistory)
     setIsThinking(false)
-  }, [isThinking, mode, desktopModel, recordActivity, learningGoal, learningContext, activeBrowserModel])
+  }, [isThinking, mode, desktopModel, recordActivity, learningGoal, learningContext, activeBrowserModel, cpuActive])
 
   const clearChat = useCallback(() => {
     // Start a fresh session with a new unique session ID
@@ -1358,6 +1413,7 @@ export default function WebLLMChat({
           </button>}
         </div>
       </div>
+      {modelSize === '7B' && <p className="mb-3 text-xs text-text-secondary">Advanced 7B runs entirely in this browser. Experimental: plan for 16 GB RAM, an 8 GB compatible GPU, and about 6 GB free browser storage. The first load is a large download; close other AI sessions. It may fail on integrated graphics.</p>}
       <details className="mb-4 border-b border-border-subtle pb-3 text-xs">
         <summary className="w-fit cursor-pointer text-text-tertiary hover:text-text-primary">Chat settings &amp; offline access</summary>
         <div className="pt-3">
@@ -1370,6 +1426,11 @@ export default function WebLLMChat({
         </div>
       )}
       <p className="mb-3 text-text-secondary">{MODEL_TIERS.find(item => item.id === modelSize)?.description} Switching loads the selected model and keeps your conversation.</p>
+      <div className="mb-3 text-text-secondary">
+        <button onClick={enableCpuAI} disabled={isThinking || mode === 'loading' || (mode === 'ai' && cpuActive)} className="text-accent underline disabled:opacity-50">{mode === 'ai' && cpuActive ? 'CPU Light is active' : 'Use CPU Light (no GPU)'}</button>
+        <p className="mt-1">A small model running on your processor. First use downloads model files. It can be slower and less capable than the GPU models; no paid service is needed.</p>
+      </div>
+      {cpuActive && mode === 'ai' && <button onClick={enableFullAI} disabled={isThinking} className="mb-3 text-accent underline">Try GPU Light instead</button>}
       {mode === 'ai' && <p className="mb-3 break-all text-text-tertiary">Active model: {desktopModel || activeBrowserModel}</p>}
       {import.meta.env.DEV && mode !== 'ai' && (
         <button onClick={enableDesktopAI} className="mb-3 text-xs text-accent underline">
@@ -1378,7 +1439,7 @@ export default function WebLLMChat({
       )}
       {mode === 'lite' && (
         <p className="mb-3 text-[11px] text-text-muted">
-          The default selects the lowest-memory compatible model. First use downloads model files. WebGPU is required; small models may misunderstand or give weaker explanations. Workshop progress is checked separately.
+          GPU Light selects the lowest-memory compatible model. First use downloads model files. GPU models require WebGPU; CPU Light does not. Small models can misunderstand questions. Workshop progress is checked separately.
         </p>
       )}
       {mode === 'lite' && lowPowerWarning && (
@@ -1389,7 +1450,7 @@ export default function WebLLMChat({
           <OfflineLessons />
         </div>
       </details>
-      {aiError && <p role="alert" className="mb-3 text-xs text-danger">{aiError}</p>}
+      {aiError && <div role="alert" className="mb-3 rounded border border-danger/30 p-3 text-xs text-danger"><p>{aiError}</p>{gpuHelp && <button onClick={enableCpuAI} disabled={isThinking || mode === 'loading'} className="mt-2 rounded bg-accent px-3 py-2 text-white">Use CPU Light</button>}</div>}
       {mode === 'loading' && (
         <div className="mb-3 rounded-lg border border-border-subtle bg-surface-raised px-4 py-2.5 text-xs text-accent animate-pulse">
           {downloadProgress || 'Starting download...'} — Lite hints remain available.
@@ -1399,7 +1460,7 @@ export default function WebLLMChat({
       {mode === 'ai' && (
         <div className="mb-3 flex items-center justify-between rounded-lg border border-border-subtle bg-surface-raised px-4 py-2 text-xs">
           <span className="text-text-tertiary">
-            <span title={desktopModel || activeBrowserModel}>{desktopModel ? 'Desktop AI' : `${modelTierLabel(activeModelTier(activeBrowserModel))} AI`} active · stays on your device</span>
+            <span title={desktopModel || activeBrowserModel}>{cpuActive ? 'CPU Light' : desktopModel ? 'Desktop AI' : `${modelTierLabel(activeModelTier(activeBrowserModel))} AI`} active · stays on your device</span>
           </span>
           <button
             onClick={() => {
@@ -1419,7 +1480,7 @@ export default function WebLLMChat({
 
       {/* Messages — naturally sizes without artificial empty dead air.
           Scrollable as messages accumulate. */}
-      <div className="overflow-y-auto space-y-4 pr-2 overscroll-y-contain max-h-[max(160px,calc(100dvh-560px))] min-h-[60px]">
+      <div className="chat-thread overflow-y-auto space-y-4 pr-2 overscroll-y-contain">
         {messages.map((msg, i) => (
           <MessageBubble key={i} msg={msg} />
         ))}

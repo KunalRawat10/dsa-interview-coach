@@ -16,7 +16,7 @@ export async function findDesktopModel(): Promise<string> {
   if (!response.ok) throw new Error('Start Ollama on this computer, then retry desktop AI.')
   const data = await response.json() as { models?: { name: string }[] }
   const names = data.models?.map(model => model.name) ?? []
-  const selected = ['qwen2.5:0.5b', 'qwen2.5:1.5b', 'qwen2.5:7b', 'qwen2.5-coder:7b'].find(name => names.includes(name))
+  const selected = ['qwen2.5:7b', 'qwen2.5-coder:7b', 'qwen2.5:1.5b', 'qwen2.5:0.5b'].find(name => names.includes(name))
   if (!selected) throw new Error('No supported desktop model found. Install qwen2.5:0.5b in Ollama, or use browser AI.')
   return selected
 }

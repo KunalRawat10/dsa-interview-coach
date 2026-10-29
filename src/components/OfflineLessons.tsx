@@ -8,7 +8,7 @@ export default function OfflineLessons() {
   }
   return <div className="mb-4 rounded-lg border border-border-subtle p-3 text-xs">
     <button disabled={progress.state === 'saving'} onClick={save} className="text-accent underline disabled:opacity-50">{progress.state === 'saving' ? 'Saving…' : 'Save core lessons for offline use'}</button>
-    <p className="text-text-tertiary mt-1">Saves problem statements, workshop exercises and explanations. Open-ended AI chat needs a separately downloaded model and compatible graphics.</p>
+    <p className="text-text-tertiary mt-1">Saves problem statements, workshop exercises and explanations. AI models download separately. GPU models need compatible graphics; CPU Light does not.</p>
     {progress.message && <p role="status" className="mt-2">{progress.message}</p>}
   </div>
 }

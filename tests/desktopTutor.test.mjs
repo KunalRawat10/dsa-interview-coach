@@ -38,7 +38,7 @@ test('desktop disconnect and service errors reject rather than looking like succ
 test('desktop discovery chooses an installed supported model and handles missing models', async t => {
   const original = globalThis.fetch
   t.after(() => { globalThis.fetch = original })
-  globalThis.fetch = async () => Response.json({ models: [{ name: 'qwen2.5:7b' }, { name: 'qwen2.5-coder:7b' }] })
+  globalThis.fetch = async () => Response.json({ models: [{ name: 'qwen2.5:0.5b' }, { name: 'qwen2.5:7b' }, { name: 'qwen2.5-coder:7b' }] })
   assert.equal(await findDesktopModel(), 'qwen2.5:7b')
   globalThis.fetch = async () => Response.json({ models: [] })
   await assert.rejects(findDesktopModel(), /No supported desktop model/)

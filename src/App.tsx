@@ -57,6 +57,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (!isFirstRender.current) window.scrollTo({ top: 0, behavior: 'instant' })
     if (mainRef.current && !isFirstRender.current && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       gsap.fromTo(
         mainRef.current,

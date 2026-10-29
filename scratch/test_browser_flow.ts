@@ -98,8 +98,8 @@ assert(
   'Step 5: Does NOT repeat "Can you write the code?" after explanation'
 )
 assert(
-  turn5.visibleReply.includes('Excellent work') || turn5.visibleReply.includes('constraints'),
-  'Step 5: Validates solution and complexity'
+  !turn5.visibleReply.includes('complete implementation') && turn5.thread.current.cognitiveTask === 'IMPLEMENT',
+  'Step 5: Explanation leads to implementation without claiming code is verified'
 )
 
 // Step 6: User provides actual C++ code
@@ -118,8 +118,8 @@ assert(
   'Step 6: Does NOT repeat "Can you write the code?" after code submission'
 )
 assert(
-  turn6.visibleReply.includes('Excellent work') || turn6.visibleReply.includes('constraints'),
-  'Step 6: Validates code submission'
+  turn6.visibleReply.includes('not been executed or verified'),
+  'Step 6: Requests a trace without falsely validating code'
 )
 
 // Step 7: Idempotence check (second submission)
@@ -244,8 +244,8 @@ assert(
   'Flow C Turn 3: Action is OFFER_CODE_IMPLEMENTATION'
 )
 assert(
-  turnC3.thread.current.cognitiveTask === 'SUMMARIZE',
-  'Flow C Turn 3: CognitiveTask is SUMMARIZE (solution validated)'
+  turnC3.thread.current.cognitiveTask === 'IMPLEMENT',
+  'Flow C Turn 3: Explanation is ready for coding, not a verified implementation'
 )
 assert(
   !turnC3.visibleReply.includes('When you\'re scanning a number and find that it\'s already in the Set'),
@@ -256,8 +256,8 @@ assert(
   'Flow C Turn 3: Does NOT ask "Can you write the code?" when full summary provided'
 )
 assert(
-  turnC3.visibleReply.includes('Excellent work') || turnC3.visibleReply.includes('constraints'),
-  'Flow C Turn 3: Validates complete solution and complexity'
+  !turnC3.visibleReply.includes('complete implementation') && !turnC3.visibleReply.includes('Excellent work'),
+  'Flow C Turn 3: Does not falsely certify a natural-language summary'
 )
 
 // Turn C4: Idempotent continuation
@@ -275,3 +275,5 @@ assert(
 console.log('\n============================================================')
 console.log(`TOTAL: ${totalTests} | PASSED: ${passedTests} | FAILED: ${totalTests - passedTests}`)
 console.log('============================================================')
+
+if (totalTests !== passedTests) process.exitCode = 1

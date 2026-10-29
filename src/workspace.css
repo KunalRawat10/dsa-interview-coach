@@ -47,6 +47,8 @@
 }
 ::selection { background: #dce4c8; color: #263a2c; }
 .workspace .seen-box { background: #f1ede3; }
+.workspace .chat-thread { min-height: 280px; max-height: clamp(360px, 56dvh, 680px); }
+@media(max-width:600px) { .workspace .chat-thread { min-height: 240px; max-height: 60dvh; } }
 .workspace button, .workspace details { border-radius: 4px; }
 @media (prefers-reduced-motion: reduce) {
   .workspace *, .workspace *::before, .workspace *::after { animation: none !important; transition: none !important; }
