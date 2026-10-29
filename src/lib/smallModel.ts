@@ -3,7 +3,7 @@ import type { Problem } from '../data/problems'
 import { generateTutorReply, type TutorMessage } from './conversationalTutor'
 import { getLessonState, type LearningGoal, type LessonMessage } from './lessonTutor'
 import { guidedReplyViolations } from './teachingPolicy'
-import { asksAboutPrerequisite } from './tutorIntent'
+import { asksAboutPrerequisite, concreteSingleStep, membershipOrderExplanation } from './tutorIntent'
 
 // Choose by the installed runtime's memory estimates, not parameter count alone.
 export function smallestCompatibleModel(models: ModelRecord[], features: ReadonlySet<string>): ModelRecord {
@@ -18,6 +18,7 @@ export function compactPayload(messages: TutorMessage[], problem: Problem | unde
   const system = `You are a patient teacher. Reply in two short sentences. Answer the question. Goal: ${goal}. ${goal === 'concepts' ? 'Explain one idea. NO CODE. Coding is optional.' : goal === 'pseudocode' ? 'Use plain-language steps.' : 'Help with coding; ask their preferred language if unknown.'}
 Problem: ${problem?.title ?? 'Student topic'}. ${problem?.description ?? ''}
 ${problem?.slug === 'contains-duplicate' ? 'Verified facts: return true if any value repeats, otherwise false after checking all values. A list of previously seen values is a valid plan. A Set retains ALL distinct values, not only the last value added; check membership BEFORE adding. Do not force a Set if the student has another valid plan.' : ''}
+When asked to compare membership costs: an unsorted list can scan up to all its values, stopping if a match is found. Common hash-based Sets offer expected/average O(1) membership, not a guarantee for every lookup. Answer the comparison without repeating the definition.
 ${context.slice(0, 1600)}`
   const recent: TutorMessage[] = []
   let size = 0
@@ -37,7 +38,7 @@ export async function generateSmallModelTurn(messages: LessonMessage[], problem:
   const current = messages.findLast(message => message.role === 'user')?.content ?? ''
   const verified = verifiedSmallStep(current, problem, context, lesson.questions.other ?? 0)
   // Short prerequisite answers use checked content directly. Open questions still use AI.
-  if (goal === 'concepts' && verified.direct) return { reply: verified.reply, lesson, attempts: 0 }
+  if (verified.direct && (goal === 'concepts' || (goal === 'pseudocode' && membershipOrderExplanation(current)))) return { reply: verified.reply, lesson, attempts: 0 }
   const draft = await generateTutorReply(compactPayload(messages, problem, goal, context), complete, undefined, { temperature: 0.2, maxTokens: 128 })
   const repeated = messages.filter(message => message.role === 'assistant').slice(-3).some(message => similarReply(message.content, draft))
   const falseSetMemory = /\bset\b[^.!?]*\b(?:only|just)\b[^.!?]*\b(?:last|latest|most recent)\b/i.test(draft)
@@ -58,10 +59,10 @@ function verifiedSmallStep(current: string, problem: Problem | undefined, contex
   const text = current.toLowerCase()
   const asking = /\?|\b(?:what|how|why|explain|tell|show|help|dont know|don't know|not understand|no idea)\b/.test(text)
   if (problem?.slug === 'contains-duplicate') {
-    const concernsOrder = /\b(?:add|adding|insert|inserting|put)\b/.test(text)
-      && /\b(?:check|test|membership|look|seen)\b/.test(text)
-      && /\b(?:first|before|after|order|itself)\b/.test(text)
-    if (concernsOrder) return { direct: true, reply: 'Adding 4 first makes a later membership check find that same 4, even when no earlier 4 exists. That would falsely report a repeat. Check for an earlier occurrence before adding the current value.' }
+    const order = membershipOrderExplanation(current)
+    if (order) return { direct: true, reply: order }
+    const singleStep = concreteSingleStep(current)
+    if (singleStep) return { direct: true, reply: singleStep }
     // Evaluate a small, explicitly requested example from its actual values.
     // No model judgement or required answer wording is needed for this fact.
     const example = text.match(/\[\s*(-?\d+(?:\s*,\s*-?\d+)*)\s*\]/)
@@ -84,7 +85,7 @@ function verifiedSmallStep(current: string, problem: Problem | undefined, contex
     if (/\b(?:it asks|question asks|task asks)\b/.test(text)) return { direct: true, reply: 'The question asks for true or false: does any value occur at least twice? In [4,7,4], the two 4s are equal, so the answer is true. You do not have to write code to explain this.' }
     if (/\b1\.2\b/.test(text)) return { direct: true, reply: 'Do you mean the two values 1 and 2, or the decimal value 1.2? They are different inputs. If you mean [1,2,1], the final 1 matches the earlier 1, so the answer is true.' }
     if (/sort/.test(text)) return { direct: true, reply: 'Sorting is another valid approach: it brings equal values next to each other. For [3,1,3], sorting gives [1,3,3], where the adjacent 3s reveal the repeat. It changes the order and usually costs O(n log n) time.' }
-    const offersMemoryPlan = /\b(?:i|we|my)\b/.test(text) && /\b(?:guest|names?|list)\b/.test(text)
+    const offersMemoryPlan = /\b(?:(?:could|can|would|should)\s+(?:i|we)\s+(?:keep|use|store|record|remember)|(?:i|we)\s+(?:(?:would|could|can|will)\s+)?(?:keep|use|store|record|remember))\b/.test(text) && /\b(?:guest|names?|list)\b/.test(text)
       && /\b(?:seen|already|earlier|before|remember|twice|repeat)\b/.test(text)
       && /\b(?:check|checking|compare|comparing|look|looking|match)\b/.test(text)
       && !/\b(?:only|just)\b[^.!?]*\b(?:last|latest|most recent)\b/.test(text)

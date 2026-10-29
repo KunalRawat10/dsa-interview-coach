@@ -1,5 +1,5 @@
 // PatternOS Practice Problem Library
-// 20 problems organized by learning progression.
+// Problems organized by learning progression.
 // All pedagogical metadata lives here — UI imports only what it needs.
 
 export type ProblemDifficulty = 'Easy' | 'Medium' | 'Hard'
@@ -686,6 +686,19 @@ export const PROBLEMS: Problem[] = [
       'Trie-based search with memoization (O(n² + total_words) time)',
       'Brute force recursion without memoization (O(2ⁿ) exponential baseline)',
     ],
+  },
+  {
+  id:21, title:'Minimum Window Substring', slug:'minimum-window-substring', difficulty:'Hard',
+  pattern:'Sliding Window + Frequency Counts', patternTag:'sliding-window', category:'Advanced',
+  description:'Given uppercase English strings s and t, return the shortest contiguous substring of s containing every character of t, including repeated occurrences. If several shortest windows exist, return the earliest. Return an empty string when no window exists.',
+  examples:[{input:'s = "CABBA", t = "AAB"',output:'"ABBA"',note:'Two As and one B are required.'},{input:'s = "ADOBECODEBANC", t = "ABC"',output:'"BANC"'},{input:'s = "HELLO", t = "XYZ"',output:'""'}],
+  constraints:['0 ≤ s.length ≤ 100000','1 ≤ t.length ≤ 100000','Uppercase English letters only'],
+  observation:'A Set loses the quantities required by a target such as AAB.',
+  structuralClue:'Expand until a continuous window covers the target counts; shrink while it remains valid.',
+  invariant:'A window is valid exactly when every required character count is satisfied.',
+  hints:['Count the As and Bs in AAB separately.','Which required quantity is still missing from the current window?','Once valid, can the leftmost character be removed while keeping all counts satisfied?','Track how many distinct required characters have reached their required quantities.'],
+  expectedTime:'O(n + m)', expectedSpace:'O(1) count workspace for the fixed uppercase alphabet; O(k) returned string',
+  alternativeStrategies:['Exhaustive substring search with frequency checks as a small-input reference','Sliding window with required/current counts and a satisfied-requirements counter'],
   },
 ]
 

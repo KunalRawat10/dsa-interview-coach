@@ -1,7 +1,7 @@
 import type { Problem } from '../data/problems'
 import { buildSystemPrompt, buildChatHistoryPayload, generateTutorReply, type TutorMessage } from './conversationalTutor'
 import { generateTeachingReply, guidedReplyViolations, requestsFullSolution, needsWorkedExample } from './teachingPolicy'
-import { asksAboutPrerequisite } from './tutorIntent'
+import { asksAboutPrerequisite, concreteSingleStep, concreteMembershipStep, membershipOrderExplanation } from './tutorIntent'
 
 export type LearningGoal = 'concepts' | 'pseudocode' | 'code'
 export const LESSON_CONCEPTS = ['goal', 'approach', 'memory', 'membership', 'repeat_case', 'no_repeat_case', 'check_before_add', 'set_basics', 'other'] as const
@@ -112,10 +112,13 @@ function withoutQuestion(reply: string): string {
   return reply.replace(/(?:^|(?<=[.!]))\s*[^.!?]*\?\s*$/, '').trim()
 }
 
-function teachMissingPiece(state: LessonState, target?: Concept): string {
+function teachMissingPiece(state: LessonState, target?: Concept, learnerText = ''): string {
+  const continuing = concreteMembershipStep(learnerText)
+  if (continuing) return continuing
   const hasApproach = hasDemonstratedApproach(state)
   const hasRepeat = state.demonstrated.some(item => item.concept === 'repeat_case')
   if (hasApproach && hasRepeat) {
+    if (isSpecificFollowUp(learnerText)) throw new Error('Answer the latest follow-up question instead of substituting a lesson-completion summary')
     state.taught = [...new Set([...state.taught, 'no_repeat_case' as const])]
     state.complete = true
     return conceptLessonSummary(state)
@@ -127,13 +130,13 @@ function teachMissingPiece(state: LessonState, target?: Concept): string {
   if (hasApproach) {
     if (!(state.questions.repeat_case)) {
       state.questions.repeat_case = 1
-      return 'Your plan gives us a way to check the values. Let\'s apply it once: if 1 and 2 have already been recorded, what does seeing another 1 tell us?'
+      return 'Keep the same example and your current record of earlier values. Does the current value match anything already in that record?'
     }
     state.taught = [...new Set([...state.taught, 'repeat_case' as const, 'no_repeat_case' as const])]
-    return 'With [1,2,1], the last 1 matches a value already recorded, so a repeat exists and the answer is true. With [4,7,9], every value differs, so checking the entire input finds no repeat and the answer is false. These are the two outcomes your plan needs to handle.'
+    return 'A value matching an earlier occurrence establishes a repeat, so the result is true. If every position has been checked without a repeat, the result is false. Apply those rules to the same example you are already working through.'
   }
-  state.taught = [...new Set([...state.taught, 'memory' as const, 'membership' as const])]
-  return 'A concrete way to start is to record the first value, such as 1, then compare each later value with what was recorded. When another 1 arrives, it matches an earlier value, which means a repeat exists. A list with comparisons is a valid approach; no special data-structure name is required.'
+  state.taught = [...new Set([...state.taught, 'memory' as const])]
+  return concreteSingleStep(learnerText, true) ?? 'Begin by writing down only the first value in an empty seen list. Leave the remaining positions for later.'
 }
 
 function removeCodingInvitations(reply: string): string {
@@ -157,6 +160,11 @@ function truthfulStudentReply(reply: string, state: LessonState): string {
 function isAcknowledgment(text: string): boolean {
   return /^(?:ok+k?|okay|thanks|thank you|got it)[.!\s]*$/i.test(text.trim())
     || (/^oh\s+ok\b/i.test(text.trim()) && text.split(/\s+/).length <= 12 && !/\d|\?/.test(text))
+}
+
+function isSpecificFollowUp(text: string): boolean {
+  if (/\b(?:can|could)\s+(?:we|i)\s+(?:finish|stop|end)\s+here\b|\bi (?:want|would like) to (?:finish|stop|end)\b/i.test(text)) return false
+  return /\?|\b(?:why|how|what|explain|compare|teach|show|tell|help)\b/i.test(text)
 }
 
 function paceConcreteExercises(reply: string, state: LessonState, previous: LessonState): string {
@@ -265,7 +273,7 @@ WHAT THIS STUDENT ALREADY DEMONSTRATED:
 ${state.demonstrated.map(item => `- ${item.concept}: student said ${JSON.stringify(item.quote)}`).join('\n') || 'No demonstrated understanding recorded yet.'}
 WHAT YOU ALREADY EXPLAINED: ${state.taught.join(', ') || 'none'}
 ALREADY ASKED CHECKS: ${JSON.stringify(state.questions)}
-CONCEPT LESSON COMPLETE: ${state.complete}
+BASIC EXAMPLE CHECKPOINT COMPLETE: ${state.complete}. This covers basic duplicate reasoning only. It does not certify understanding of data-structure choice, lookup cost, algorithm complexity or coding. Answer new questions about those topics directly; a completed checkpoint must never end a requested explanation.
 
 The lesson memory has already assessed what the student demonstrated. Trust its distinctions: goal is the task, memory/membership are the approach, repeat_case is an actual repeated value, and no_repeat_case is a distinct case. Acknowledgment is not new evidence. Do not invent additional mastery.
 
@@ -274,6 +282,8 @@ After they describe keeping earlier values and checking repeats, acknowledge tha
 When the learner refers to [1,2,1], keep that example; do not silently change it to [1,2,3,1] and suggest stopping after its first two values. Stopping early is justified only when processing an actual repeated occurrence.
 If they lack a prerequisite, define it and perform one tiny action with its result before a small application. Answer side questions directly. Arrays plus loops are a VALID way to search; do not reject a loop or force a Set as a correction. Recording extra occurrences can work, but the task only needs a boolean. If they identify the repeated number, clarify that we return true rather than the number itself. Ambiguity calls for clarification, not automatic praise.
 If asked about a Set: it stores distinct values. Membership checks whether a value is present. In JavaScript, has(x) returns a boolean and add(x) returns the Set. Check before adding to distinguish earlier occurrences from the current item.
+When comparing lookup costs, answer that comparison directly rather than repeating a Set definition or tracing an array. An unsorted list may scan up to all its items for one lookup, stopping early if a match is found. Common hash-based Sets offer expected/average O(1) membership, not a guarantee that every lookup is constant time. Explain complexity only when the student asks about it.
+O(1) describes how expected work grows with input size; it does NOT mean literally one comparison. Hashing and collision handling can involve multiple operations. Never translate average O(1) into "only one comparison."
 
 Output only the requested JSON. Choose a SHORT helpful reply based on the assessed lesson memory. Use at most one useful question. No unsolicited code. questionConcept must identify what your question tests: goal, approach, repeat_case, no_repeat_case, set_basics, other, or none. Do not test an already demonstrated concept again. taught contains only concepts actually explained in THIS reply. requestedGoal is unchanged unless the latest learner explicitly requests a new goal; goalEvidence must quote that request, not a problem restatement. Completion is conceptual, NEVER a claim that code was executed or verified.`
 
@@ -299,13 +309,18 @@ export async function generateLessonTurn(
       : await generateTeachingReply(payload, current, createCompletion)
     return { reply, lesson: state, attempts: 1 }
   }
+  const order = effectiveGoal !== 'code' && !requestsFullSolution(current) ? membershipOrderExplanation(current) : undefined
+  if (order) return { reply: order, lesson: state, attempts: 0 }
   const prerequisite = prerequisiteExplanation(state, current)
   if (prerequisite) return { reply: prerequisite, lesson: state, attempts: 0 }
+  const singleStep = effectiveGoal === 'concepts' && !requestsFullSolution(current) ? concreteSingleStep(current) : undefined
+  if (singleStep) return { reply: singleStep, lesson: state, attempts: 0 }
   state = await assessLearnerUnderstanding(state, messages, createCompletion)
   if (state.complete && selectedGoal === 'concepts' && isAcknowledgment(current)) {
     return { reply: 'You can stop here: your conceptual lesson is complete. Coding is optional, and you can return to it whenever you want.', lesson: state, attempts: 0 }
   }
   const full = requestsFullSolution(current)
+  const followUp = isSpecificFollowUp(current)
   const payload = buildChatHistoryPayload(lessonPrompt(problem, state) + '\nLATEST LEARNER MESSAGE (assess this in context): ' + JSON.stringify(current) + '\nNever ask for a data structure name before teaching it. A plan using a list and comparisons is valid; do not replace it with a Set as a correction.', messages, notes)
   let lastErrors: string[] = []
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -319,6 +334,7 @@ export async function generateLessonTurn(
         || !Array.isArray(packet.taught) || typeof packet.goalEvidence !== 'string'
         || ![...LESSON_CONCEPTS, 'none'].includes(packet.questionConcept)) throw new Error('Invalid lesson packet')
       if (packet.questionConcept === 'memory' || packet.questionConcept === 'membership') packet.questionConcept = 'approach'
+      if (!packet.reply.includes('?')) packet.questionConcept = 'none'
       const next = applyLessonPacket(state, packet, messages, effectiveGoal)
 
       const demonstrated = next.demonstrated.some(item => item.concept === packet.questionConcept)
@@ -339,15 +355,15 @@ export async function generateLessonTurn(
           }
         } else if (state.problemSlug === 'contains-duplicate') {
           next.questions = { ...state.questions }
-          packet.reply = teachMissingPiece(next, packet.questionConcept)
+          packet.reply = teachMissingPiece(next, packet.questionConcept, current)
         } else errors.push('Repeated check of an already demonstrated or already checked concept; explain a missing concept or finish instead')
       }
       if (next.goal === 'concepts') {
-        packet.reply = removeCodingInvitations(packet.reply) || teachMissingPiece(next)
+        packet.reply = removeCodingInvitations(packet.reply) || teachMissingPiece(next, undefined, current)
         if (packet.nextAction === 'offer_code') packet.nextAction = next.complete ? 'finish' : 'explain'
       }
       if (next.goal === 'concepts' && (packet.nextAction === 'offer_code' || /(?:how would you|let'?s|now|try to)\s+(?:start|write|code|implement)|start your code|in JavaScript/i.test(packet.reply))) errors.push('Unrequested coding in a concept-only lesson')
-      if (next.goal === 'concepts' && next.complete && !state.complete) {
+      if (next.goal === 'concepts' && next.complete && !state.complete && !followUp) {
         packet.reply = conceptLessonSummary(next)
         // The completion summary is generated from validated state, never a model claim of mastery.
         errors = errors.filter(error => !['too many sentences for one small step', 'too long for one teaching step', 'complete solution recipe'].includes(error))
@@ -360,15 +376,11 @@ export async function generateLessonTurn(
         if (packet.nextAction === 'finish') packet.reply = (packet.reply.match(/[^.!?]+[.!?]+/)?.[0] ?? packet.reply).trim() + ' The concept lesson is already complete; further practice is optional.'
         next.questions = { ...state.questions }
       }
-      if (next.goal === 'concepts' && /\bset\b/i.test(current) && /\?|\b(?:how|what|tell|know|explain)\b/i.test(current)) {
-        packet.reply = 'A Set stores each distinct value once. To check for a repeat, ask whether the current value is already present before adding it. If the Set contains 1 and 2, checking for 1 answers yes, while checking for 3 answers no. You can understand and practice that idea without writing code.'
-        next.taught = [...new Set([...next.taught, 'set_basics' as const])]
-        next.questions = { ...state.questions }
-        errors = []
-      }
       if (next.goal === 'concepts') {
         packet.reply = paceConcreteExercises(packet.reply, next, state)
-        packet.reply = truthfulStudentReply(packet.reply, next) || (next.complete ? conceptLessonSummary(next) : teachMissingPiece(next))
+        packet.reply = truthfulStudentReply(packet.reply, next) || (followUp ? '' : next.complete ? conceptLessonSummary(next) : teachMissingPiece(next, undefined, current))
+        if (!packet.reply.trim()) errors.push('Answer the follow-up directly without unsupported mastery claims')
+        if (followUp && packet.nextAction === 'finish' && /lesson.*complete|you can (?:finish|stop)|further practice is optional|demonstrated a plan/i.test(packet.reply)) errors.push('The learner asked a follow-up; answer it instead of closing the lesson')
       }
       if (!full && next.goal === 'concepts') {
         errors.push(...guidedReplyViolations(packet.reply).filter(error =>
@@ -376,10 +388,11 @@ export async function generateLessonTurn(
           && error !== 'lecture outline instead of one small step'
           && !((next.complete || hasDemonstratedApproach(next)) && error === 'complete solution recipe')))
       }
+      if ((packet.reply.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [packet.reply]).some(sentence => /\bset\b/i.test(sentence) && /\b(?:only|exactly|just)\s+(?:1|one|a single)\s+comparisons?\b/i.test(sentence) && !/\b(?:not|never|isn't|doesn't)\b/i.test(sentence))) errors.push('Average O(1) is a growth rate, not literally only one comparison. Explain average membership cost without claiming an exact comparison count.')
       if (!errors.length) return { reply: packet.reply, lesson: next, attempts: attempt + 1 }
-      if (attempt === 1 && next.goal === 'concepts' && next.problemSlug === 'contains-duplicate') {
+      if (attempt === 1 && next.goal === 'concepts' && next.problemSlug === 'contains-duplicate' && !followUp) {
         next.questions = { ...state.questions }
-        return { reply: teachMissingPiece(next, packet.questionConcept === 'none' ? undefined : packet.questionConcept), lesson: next, attempts: 2 }
+        return { reply: teachMissingPiece(next, packet.questionConcept === 'none' ? undefined : packet.questionConcept, current), lesson: next, attempts: 2 }
       }
     } catch (error) { errors.push(error instanceof Error ? error.message : 'Invalid lesson packet') }
     lastErrors = errors

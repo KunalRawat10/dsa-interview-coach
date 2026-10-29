@@ -8,6 +8,7 @@ interface ProblemSelectorProps {
   totalSolved: number
   solvedIds: Set<number>
   attemptedIds: Set<number>
+  hidePattern?: boolean
 }
 
 const DIFF_COLOR: Record<string, string> = {
@@ -24,6 +25,7 @@ export const ProblemSelector = memo(function ProblemSelector({
   totalSolved,
   solvedIds,
   attemptedIds,
+  hidePattern = false,
 }: ProblemSelectorProps) {
   const [open, setOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -104,7 +106,7 @@ export const ProblemSelector = memo(function ProblemSelector({
             {activeProblem.category}
           </span>
           <span className="font-mono text-[10px] text-text-muted shrink-0 hidden lg:block">
-            {activeProblem.pattern}
+            {hidePattern ? 'Explore the approach' : activeProblem.pattern}
           </span>
         </button>
 
@@ -273,7 +275,7 @@ export const ProblemSelector = memo(function ProblemSelector({
                           </span>
                           <span className="text-xs flex-1 truncate">{problem.title}</span>
                           <span className="font-mono text-[9px] text-text-muted hidden md:inline truncate max-w-[130px]">
-                            {problem.pattern}
+                            {hidePattern ? 'Explore the approach' : problem.pattern}
                           </span>
                           <span
                             className={`font-mono text-[10px] shrink-0 ${

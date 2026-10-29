@@ -1402,7 +1402,7 @@ export default function WebLLMChat({
           <option value="code">Practice coding</option>
         </select>
         {learningGoal === 'concepts' && <span className="text-text-tertiary">No coding required.</span>}
-        {lessonState.complete && <span role="status" className="text-success">Concept lesson complete</span>}
+        {lessonState.complete && <span role="status" className="text-success">Example checkpoint complete · questions welcome</span>}
         <div className="ml-auto flex items-center gap-2">
           <label htmlFor="ai-model-tier" className="text-text-secondary">AI model</label>
           <select id="ai-model-tier" value={modelSize} disabled={isThinking || mode === 'loading'} onChange={event => {

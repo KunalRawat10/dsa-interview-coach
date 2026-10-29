@@ -8,6 +8,46 @@ const problem = PROBLEMS.find(item => item.slug === 'contains-duplicate')
 const fresh = () => getLessonState([], problem.slug)
 const packet = (changes = {}) => ({ reply: 'We can keep the earlier values.', demonstrated: [], taught: [], questionConcept: 'none', nextAction: 'explain', requestedGoal: 'unchanged', goalEvidence: '', ...changes })
 
+test('technical follow-ups survive both new and existing completion, including a repeated question', async () => {
+  const question='Suppose my seen list contains 1,000 different numbers. To check whether 7 is already there, would an ordinary list need to search through them? How would checking a Set differ? Explain only this comparison, without tracing [4,7,4] again.'
+  const reply='An unsorted list may scan up to 1,000 entries for one lookup. A common hash-based Set offers expected O(1) membership checks on average, without guaranteeing constant time for every lookup.'
+  for (const complete of [false,true]) {
+    const lesson=fresh()
+    lesson.demonstrated=[{concept:'approach',quote:'I keep earlier values and check each arrival'},{concept:'repeat_case',quote:'The last 4 matches the first 4'}]
+    lesson.complete=complete
+    if(complete) lesson.taught=['no_repeat_case']
+    const history=[{role:'assistant',content:'Previous checkpoint.',lesson},{role:'user',content:question},{role:'assistant',content:'An old irrelevant Set definition.',lesson},{role:'user',content:question}]
+    const result=await generateLessonTurn(history,problem,'concepts',async (_payload,options)=>isAssessment(options)?emptyAssessment:{choices:[{message:{content:JSON.stringify(packet({reply,taught:['no_repeat_case'],questionConcept:'approach'}))}}]})
+    assert.equal(result.reply.replace(/\s+/g,' '),reply)
+    assert.doesNotMatch(result.reply,/You can finish|You.ve demonstrated/)
+    assert.equal(result.lesson.complete,true)
+  }
+})
+
+test('a completed example rewrites a premature closing answer to a technical question', async () => {
+  const lesson=fresh();lesson.complete=true;lesson.taught=['no_repeat_case']
+  lesson.demonstrated=[{concept:'approach',quote:'I record earlier numbers'},{concept:'repeat_case',quote:'The last 4 repeats'}]
+  let drafts=0
+  const result=await generateLessonTurn([{role:'assistant',content:'Checkpoint complete.',lesson},{role:'user',content:'Explain why searching a list is slower than checking a hash-based Set.'}],problem,'concepts',async (_payload,options)=>{
+    if(isAssessment(options))return emptyAssessment
+    drafts++
+    return {choices:[{message:{content:JSON.stringify(packet(drafts===1?{reply:'You can finish the lesson here.',nextAction:'finish'}:{reply:'A list can require checking every stored value. A hash-based Set typically provides average constant-time membership.'}))}}]}
+  })
+  assert.equal(drafts,2)
+  assert.match(result.reply,/checking every stored value/)
+})
+
+test('technical answers cannot equate average constant time to exactly one comparison', async () => {
+  let drafts=0
+  const result=await generateLessonTurn([{role:'user',content:'Compare membership cost in a list and a Set.'}],problem,'concepts',async (_payload,options)=>{
+    if(isAssessment(options))return emptyAssessment
+    drafts++
+    return {choices:[{message:{content:JSON.stringify(packet({reply:drafts===1?'Checking a Set takes only 1 comparison on average.':'A list may scan all its entries. A hash-based Set offers expected O(1) membership, without a fixed comparison count.'}))}}]}
+  })
+  assert.equal(drafts,2)
+  assert.match(result.reply,/without a fixed comparison count/)
+})
+
 test('learning defaults to concepts and mastery requires learner evidence, not teacher statements', () => {
   const messages = [{ role: 'assistant', content: 'Remember earlier values and check for repeats.' }, { role: 'user', content: 'okk' }]
   const next = applyLessonPacket(fresh(), packet({ demonstrated: [{ concept: 'membership', quote: messages[0].content }] }), messages, 'concepts')

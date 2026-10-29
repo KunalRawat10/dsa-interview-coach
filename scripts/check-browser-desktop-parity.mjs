@@ -20,6 +20,8 @@ const inputs = [
   'Could I keep a guest list of numbers I have already seen and check whether each arriving number is already on it?',
   'For [4,7,9], none of the numbers repeats. After checking every number, I would return false. Is that right?',
   'I only wanted to understand the concept. I am not ready to code yet. Can we finish here?',
+  'Suppose my seen list contains 1,000 different numbers. To check whether 7 is already there, would an ordinary list need to search through them? How would checking a Set differ? Explain only this comparison, without tracing [4,7,4] again.',
+  'Suppose my seen list contains 1,000 different numbers. To check whether 7 is already there, would an ordinary list need to search through them? How would checking a Set differ? Explain only this comparison, without tracing [4,7,4] again.',
 ]
 const report = { base, model, path: 'full guided tutor through browser desktop adapter', turns: [], failures: [] }
 await mkdir('docs/reviews', { recursive: true })
@@ -33,6 +35,8 @@ for (const [index, content] of inputs.entries()) {
   if (result.usedFallback) report.failures.push(`Turn ${index + 1}: technical fallback`)
   if (index === 2 && /An array is an ordered list/.test(result.finalContent)) report.failures.push('Array acknowledgement repeated the definition')
   if (/```|function containsDuplicate/.test(result.finalContent)) report.failures.push(`Turn ${index + 1}: unsolicited code`)
+  if (index >= 8 && (!/\bset\b/i.test(result.finalContent) || !/\blist\b/i.test(result.finalContent) || !/scan|search|comparisons|linear|O\(n\)/i.test(result.finalContent) || /You.ve demonstrated a plan|You can finish.*lesson/i.test(result.finalContent))) report.failures.push(`Turn ${index + 1}: technical follow-up replaced or missed`)
+  if (index >= 8 && /\bonly (?:1|one) comparison\b/i.test(result.finalContent)) report.failures.push(`Turn ${index + 1}: claimed an exact Set comparison count`)
   messages.push({ role: 'assistant', content: result.finalContent, lesson: result.lesson, replyFailed: result.usedFallback })
   await writeFile('docs/reviews/browser-desktop-parity.json', JSON.stringify(report, null, 2))
   console.log(`${index + 1}: ${result.finalContent}\n`)
