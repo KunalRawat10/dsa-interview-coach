@@ -3,6 +3,7 @@ import type { Problem } from '../data/problems'
 import { generateTutorReply, type TutorMessage } from './conversationalTutor'
 import { getLessonState, type LearningGoal, type LessonMessage } from './lessonTutor'
 import { guidedReplyViolations } from './teachingPolicy'
+import { asksAboutPrerequisite } from './tutorIntent'
 
 // Choose by the installed runtime's memory estimates, not parameter count alone.
 export function smallestCompatibleModel(models: ModelRecord[], features: ReadonlySet<string>): ModelRecord {
@@ -55,7 +56,7 @@ function similarReply(a: string, b: string): boolean {
 
 function verifiedSmallStep(current: string, problem: Problem | undefined, context: string, step: number): { reply: string; direct: boolean } {
   const text = current.toLowerCase()
-  const asking = /\?|\b(?:what|how|why|explain|tell|dont know|don't know|not understand|no idea)\b/.test(text)
+  const asking = /\?|\b(?:what|how|why|explain|tell|show|help|dont know|don't know|not understand|no idea)\b/.test(text)
   if (problem?.slug === 'contains-duplicate') {
     const concernsOrder = /\b(?:add|adding|insert|inserting|put)\b/.test(text)
       && /\b(?:check|test|membership|look|seen)\b/.test(text)
@@ -74,17 +75,24 @@ function verifiedSmallStep(current: string, problem: Problem | undefined, contex
       }
     }
   }
-  if (asking && /\bset\b/.test(text)) return { direct: true, reply: 'A Set stores each distinct value once. If it contains 1 and 2, checking for 1 answers yes and checking for 3 answers no. To find repeats, check whether the current value was seen BEFORE adding it.' }
-  if (asking && /\bloop\b/.test(text)) return { direct: true, reply: 'A loop repeats an action for each item. With [4,7,9], it can inspect 4, then 7, then 9. Your approach decides what to do with each value; knowing programming syntax is not required yet.' }
-  if (asking && /\barray\b/.test(text)) return { direct: true, reply: 'An array is an ordered list of values. In [4,7,4], the first and last positions contain equal values. Equal values in different positions count as a repeat.' }
+  if (asksAboutPrerequisite(text, 'set')) return { direct: true, reply: 'A Set stores each distinct value once. If it contains 1 and 2, checking for 1 answers yes and checking for 3 answers no. To find repeats, check whether the current value was seen BEFORE adding it.' }
+  if (asksAboutPrerequisite(text, 'loop')) return { direct: true, reply: 'A loop repeats an action for each item. With [4,7,9], it can inspect 4, then 7, then 9. Your approach decides what to do with each value; knowing programming syntax is not required yet.' }
+  if (asksAboutPrerequisite(text, 'array')) return { direct: true, reply: 'An array is an ordered list of values. In [4,7,4], the first and last positions contain equal values. Equal values in different positions count as a repeat.' }
   if (problem?.slug === 'contains-duplicate') {
     // These are teaching intents, not required answer phrases or mastery gates.
     // The tiny model remains available for questions outside these checked facts.
     if (/\b(?:it asks|question asks|task asks)\b/.test(text)) return { direct: true, reply: 'The question asks for true or false: does any value occur at least twice? In [4,7,4], the two 4s are equal, so the answer is true. You do not have to write code to explain this.' }
     if (/\b1\.2\b/.test(text)) return { direct: true, reply: 'Do you mean the two values 1 and 2, or the decimal value 1.2? They are different inputs. If you mean [1,2,1], the final 1 matches the earlier 1, so the answer is true.' }
     if (/sort/.test(text)) return { direct: true, reply: 'Sorting is another valid approach: it brings equal values next to each other. For [3,1,3], sorting gives [1,3,3], where the adjacent 3s reveal the repeat. It changes the order and usually costs O(n log n) time.' }
-    if (asking && /\b(?:approach|start|first step|check)\b/.test(text)) return { direct: true, reply: 'An approach is a plan in ordinary words. Start with [4,7,4]: compare the first 4 with 7; they differ. Comparing the first 4 with the last 4 finds a match, so this input has a repeat.' }
-    if (/\b(?:guest|names?|list)\b/.test(text) && !asking) return { direct: true, reply: 'Keeping a list and checking whether a name occurs twice is a valid plan. For numbers, the list plays the same role: it remembers earlier values. You can use that idea without knowing a data structure name.' }
+    const offersMemoryPlan = /\b(?:i|we|my)\b/.test(text) && /\b(?:guest|names?|list)\b/.test(text)
+      && /\b(?:seen|already|earlier|before|remember|twice|repeat)\b/.test(text)
+      && /\b(?:check|checking|compare|comparing|look|looking|match)\b/.test(text)
+      && !/\b(?:only|just)\b[^.!?]*\b(?:last|latest|most recent)\b/.test(text)
+    if (offersMemoryPlan) return { direct: true, reply: 'Your guest-list idea can work: the list remembers earlier values. Check whether each arriving value is already on it before adding that value. You can reason about this plan without knowing a data structure name.' }
+    const asksForOneComparison = /\b(?:first|one|single)\s+(?:small\s+)?comparison\b|\bcompare\b.*\bonly one\b/.test(text)
+    const asksToStart = /\b(?:approach|start|first step|one (?:small )?step)\b/.test(text)
+      || /\b(?:how|where)\b[^.!?]*\bcheck\b/.test(text)
+    if (asking && (asksForOneComparison || asksToStart)) return { direct: true, reply: 'Start with [4,7,4]. Compare only the first 4 with 7: they differ, so this pair is not a repeat. Which value could we compare that first 4 with next?' }
     if (/\bdata structure\b/.test(text)) return { direct: true, reply: 'A data structure is a way to organise values so you can work with them. A list can remember earlier numbers; a Set is another option that supports asking whether a value is already present. The important question is what you need to remember and check.' }
     if (/\bloop\b/.test(text)) return { direct: true, reply: 'A loop with comparisons is a valid direction. You can compare a value with earlier values or with later positions, as long as you never compare a position with itself. The seen-box workshop demonstrates the earlier-values approach.' }
     if (/\b(?:box|extra|some where else|somewhere else)\b/.test(text)) return { direct: true, reply: 'Once you find that a value already occurred, you do not need another box for that occurrence. Its match with an earlier value is enough to report true. Storing the extra occurrence is optional for this question.' }
@@ -93,7 +101,7 @@ function verifiedSmallStep(current: string, problem: Problem | undefined, contex
       : 'Stopping at the second 1 works if your reason is that it matches the earlier 1. The question asks whether a repeat exists, so one confirmed match is enough. You can report true at that point.' }
     if (/\b(?:already|before|repeat|repeating)\b/.test(text) && !asking) return { direct: true, reply: /\b(?:1,2,3|1, 2, 3)\b/.test(text)
       ? 'For [1,2,3,1], the final 1 matches the earlier 1, so the result is true. Adding more different values before the match does not change the rule. The username exercise applies that same rule to text.'
-      : 'Checking whether 1 was written earlier gets at the reason a repeat exists. For [1,2,1], the last 1 matches the first. The requested output is true, rather than the repeated number itself.' }
+      : 'When values at two different positions match, the result is true rather than the repeated number itself. To continue, think about how you could remember earlier values while examining the next number.' }
     if (/\b(?:cant|can't|cannot|dont|don't)\b.*\b(?:code|coding)\b/.test(text)) return { direct: true, reply: 'You can finish this lesson without coding. Use the seen-box workshop to show your reasoning by checking values. Your conceptual practice and coding progress are recorded separately.' }
     if (/^\s*(?:oh\s+)?(?:ok+k*|okay|thanks|thank you|got it)\b/i.test(text)) return { direct: true, reply: /transfer: completed/.test(context) ? 'You have completed the username transfer exercise. Your learning record shows whether feedback was needed. You can finish here; coding is optional.' : 'You can pause here or use the seen-box workshop to try the idea yourself. Coding is optional.' }
     const steps = [

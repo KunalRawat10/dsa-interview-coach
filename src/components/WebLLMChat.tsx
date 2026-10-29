@@ -1388,6 +1388,10 @@ export default function WebLLMChat({
     // WebLLMChat sizes naturally to content inside the chamber card.
     // The messages area grows as the conversation deepens and becomes scrollable.
     <div className="flex flex-col">
+      {import.meta.env.DEV && !desktopModel && <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded border border-border-subtle bg-surface-raised px-4 py-3 text-xs">
+        <span><strong className="font-medium">Use the desktop demonstration setup</strong><span className="mt-1 block text-text-secondary">Connect to your installed model through this computer. The 7B tutor uses the full guided lesson flow.</span></span>
+        <button onClick={enableDesktopAI} disabled={isThinking || mode === 'loading'} className="rounded bg-accent px-3 py-2 text-white disabled:opacity-50">Use installed desktop tutor</button>
+      </div>}
       <div className="mb-3 flex flex-wrap items-center gap-3 text-xs">
         <label htmlFor="learning-goal" className="text-text-secondary">Learning goal</label>
         <select id="learning-goal" value={learningGoal} disabled={isThinking}
@@ -1413,7 +1417,7 @@ export default function WebLLMChat({
           </button>}
         </div>
       </div>
-      {modelSize === '7B' && <p className="mb-3 text-xs text-text-secondary">Advanced 7B runs entirely in this browser. Experimental: plan for 16 GB RAM, an 8 GB compatible GPU, and about 6 GB free browser storage. The first load is a large download; close other AI sessions. It may fail on integrated graphics.</p>}
+      {modelSize === '7B' && !desktopModel && <p className="mb-3 text-xs text-text-secondary">Advanced 7B runs entirely in this browser. Experimental: plan for 16 GB RAM, an 8 GB compatible GPU, and about 6 GB free browser storage. The first load is a large download; close other AI sessions. It may fail on integrated graphics.</p>}
       <details className="mb-4 border-b border-border-subtle pb-3 text-xs">
         <summary className="w-fit cursor-pointer text-text-tertiary hover:text-text-primary">Chat settings &amp; offline access</summary>
         <div className="pt-3">
@@ -1460,7 +1464,8 @@ export default function WebLLMChat({
       {mode === 'ai' && (
         <div className="mb-3 flex items-center justify-between rounded-lg border border-border-subtle bg-surface-raised px-4 py-2 text-xs">
           <span className="text-text-tertiary">
-            <span title={desktopModel || activeBrowserModel}>{cpuActive ? 'CPU Light' : desktopModel ? 'Desktop AI' : `${modelTierLabel(activeModelTier(activeBrowserModel))} AI`} active · stays on your device</span>
+            <span title={desktopModel || activeBrowserModel}>{cpuActive ? 'CPU Light' : desktopModel ? `Desktop AI · ${desktopModel}` : `${modelTierLabel(activeModelTier(activeBrowserModel))} AI`} active · stays on your device</span>
+            <span className="mt-1 block">{cpuActive || (desktopModel ? /:(?:0\.5|1\.5)b$/.test(desktopModel) : !['1.5B', '7B'].includes(activeModelTier(activeBrowserModel))) ? 'Compact tutor · basic explanations and limited conversation understanding' : 'Guided tutor · follows your lesson context and learning goal'}</span>
           </span>
           <button
             onClick={() => {

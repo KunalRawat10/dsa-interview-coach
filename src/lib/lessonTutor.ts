@@ -1,6 +1,7 @@
 import type { Problem } from '../data/problems'
 import { buildSystemPrompt, buildChatHistoryPayload, generateTutorReply, type TutorMessage } from './conversationalTutor'
 import { generateTeachingReply, guidedReplyViolations, requestsFullSolution, needsWorkedExample } from './teachingPolicy'
+import { asksAboutPrerequisite } from './tutorIntent'
 
 export type LearningGoal = 'concepts' | 'pseudocode' | 'code'
 export const LESSON_CONCEPTS = ['goal', 'approach', 'memory', 'membership', 'repeat_case', 'no_repeat_case', 'check_before_add', 'set_basics', 'other'] as const
@@ -200,17 +201,17 @@ function prerequisiteExplanation(state: LessonState, text: string): string | und
   if (requestsFullSolution(text) || state.goal === 'code') return undefined
   const support = needsWorkedExample(text)
   if (!support && !/^\s*what (?:is|are)\b/i.test(text)) return undefined
-  if (/\bset\b/i.test(text)) {
+  if (asksAboutPrerequisite(text, 'set')) {
     state.taught = [...new Set([...state.taught, 'set_basics' as const])]
     return 'A Set stores each distinct value once. To check for a repeat, ask whether the current value is already present before adding it. If the Set contains 1 and 2, checking for 1 answers yes, while checking for 3 answers no. You can understand and practice that idea without writing code.'
   }
-  if (/\bloop\b/i.test(text)) {
+  if (asksAboutPrerequisite(text, 'loop')) {
     return 'A loop repeats an action for each item. For [4,7,9], it can first look at 4, then 7, then 9, instead of needing a separate instruction for every item. We can practice that sequence in plain language before learning any programming syntax.'
   }
-  if (/\barray\b/i.test(text)) {
+  if (asksAboutPrerequisite(text, 'array')) {
     return 'An array is an ordered list of values. In [4,7,4], the first item is 4, the second is 7, and the third is another 4. Two positions can hold the same value; that is what a repeat means here.'
   }
-  if (/\bapproach\b|first step|where to start/i.test(text)) {
+  if (/\bapproach\b|first step|one (?:small )?step|(?:where|how) to start/i.test(text)) {
     state.taught = [...new Set([...state.taught, 'goal' as const])]
     const check = !state.demonstrated.some(item => item.concept === 'repeat_case') && !(state.questions.repeat_case)
     if (check) state.questions.repeat_case = 1
