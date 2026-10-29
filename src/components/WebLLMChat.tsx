@@ -34,6 +34,7 @@ import { withModelDeadline, browserLoadProgress } from '../lib/modelDeadline'
 import { type TutorChunk, type TutorCompletionOptions } from '../lib/conversationalTutor'
 import { generateSmallModelTurn, smallestCompatibleModel } from '../lib/smallModel'
 import OfflineLessons from './OfflineLessons'
+import { TUTOR_ACTIONS, exportTutorTranscript } from '../lib/tutorDemo'
 import { MODEL_TIERS, activeModelTier, modelTierLabel, type ModelTier } from '../lib/modelTiers'
 import { findTutorGpu, GpuUnavailableError, type TutorGpu } from '../lib/browserGpu'
 import { CpuTutorClient, CPU_MODEL_ID } from '../lib/cpuTutor'
@@ -662,6 +663,11 @@ const ChatInputBar = memo(function ChatInputBar({
 
   return (
     <div className="mt-4 pt-3 border-t border-border-subtle">
+      <details className="tutor-action-menu">
+        <summary>Choose how the tutor helps</summary>
+        <p>Pick a starting message, edit it below, then send. {mode==='ai'?'AI uses your available problem and workshop context.':'Load an AI model for flexible replies; Basic Lite hints use limited matching.'}</p>
+        <div>{TUTOR_ACTIONS.map(action=><button key={action.label} disabled={disabled||!!input.trim()} title={input.trim()?'Send or clear your draft first; your text will not be overwritten.':action.prompt} onClick={()=>{setInput(action.prompt);textareaRef.current?.focus()}}>{action.label}</button>)}{input.trim()&&<button disabled={disabled} onClick={()=>{setInput('');textareaRef.current?.focus()}}>Clear draft</button>}</div>
+      </details>
       <div className="flex gap-2 items-end">
         <textarea
           ref={textareaRef}
@@ -1565,6 +1571,10 @@ export default function WebLLMChat({
       )}
 
       {/* Input */}
+      <button className="mb-2 mt-3 text-xs text-accent underline" onClick={()=>{
+        const url=URL.createObjectURL(new Blob([exportTutorTranscript(problem?.title??'Open practice',messages)],{type:'text/markdown;charset=utf-8'}))
+        const link=document.createElement('a');link.href=url;link.download='patternos-tutor-session.md';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)
+      }}>Download this tutor conversation</button>
       <ChatInputBar
         onSend={sendMessage}
         disabled={isThinking}
