@@ -1,0 +1,20 @@
+Minimum Window Substring (Hard · Advanced)
+
+Given uppercase English strings s and t, return the shortest contiguous substring of s containing every character of t, including repeated occurrences. If several shortest windows exist, return the earliest. Return an empty string when no window exists.
+
+CODE
+Copy
+Example 1: s = "CABBA", t = "AAB" → "ABBA" (Two As and one B are required.)
+Example 2: s = "ADOBECODEBANC", t = "ABC" → "BANC"
+
+Constraints: 0 ≤ s.length ≤ 100000, 1 ≤ t.length ≤ 100000, Uppercase English letters only
+
+Tell me how you understand the problem, ask about an unfamiliar term, or share an approach. We can start wherever you need.
+
+In CABBA with target AAB, why can we remove C, but not keep removing As? Explain only this, without code.
+
+When you have the window "BBA" and need "AAB", you have one "A" but not enough "B"s. Removing "C" doesn't help because it's not in the target. Keeping "A" is important because you still need to match the "A" in "AAB". What happens if you remove the first "A" from "BBA"?
+
+That count is wrong. BBA has two Bs and one A. AAB requires two As and one B. Please correct your explanation: removing C from CABBA leaves valid ABBA; removing the first A leaves invalid BBA. Explain why, without code.
+
+You're right, my previous example was incorrect. Let's fix that. In "CABBA" with the target "AAB", if you remove "C", you get "ABBA". This is still valid because it has two "A"s and two "B"s, matching "AAB". But if you remove the first "A", you get "BBA", which is missing an "A". So, you can't remove the first "A" because it's needed to match the target. Why is "BBA" invalid now?
