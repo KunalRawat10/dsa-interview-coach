@@ -2,7 +2,7 @@ export type Value = number | string
 export const STAGES = ['trace', 'compare', 'order', 'build', 'challenge'] as const
 export type WorkshopStage = typeof STAGES[number]
 export const STAGE_NAMES: Record<WorkshopStage, string> = {
-  trace: 'Follow the values', compare: 'Choose an approach', order: 'Break the rule', build: 'Build your algorithm', challenge: 'Try it independently',
+  trace: 'Check each number', compare: 'Compare two methods', order: 'Find the mistake', build: 'Put the steps in order', challenge: 'Try it yourself',
 }
 export const PRACTICE_CASES: { name: string; values: Value[] }[] = [
   { name: 'A repeated value', values: [4, 7, 4] },
@@ -11,21 +11,21 @@ export const PRACTICE_CASES: { name: string; values: Value[] }[] = [
   { name: 'A single value', values: [7] },
 ]
 export interface TraceState { index: number; seen: Value[]; phase: 'predict' | 'add' | 'complete'; result: boolean | null; mistakes: number; feedback: string }
-export const freshTrace = (): TraceState => ({ index: 0, seen: [], phase: 'predict', result: null, mistakes: 0, feedback: 'Look at the highlighted value. Check the seen list before changing it.' })
+export const freshTrace = (): TraceState => ({ index: 0, seen: [], phase: 'predict', result: null, mistakes: 0, feedback: 'Start with the highlighted number. Nothing has been saved yet.' })
 export function predictMembership(values: Value[], state: TraceState, prediction: boolean): TraceState {
   if (state.phase !== 'predict' || state.index >= values.length) return state
   const value = values[state.index], present = state.seen.includes(value)
-  if (present !== prediction) return { ...state, mistakes: state.mistakes + 1, feedback: present ? `${value} is already in the seen list. Compare with the earlier values, not with its own position.` : `${value} is not in the seen list. An occurrence is not its own earlier occurrence. Try again.` }
+  if (present !== prediction) return { ...state, mistakes: state.mistakes + 1, feedback: present ? `${value} is already in the seen list. It matches a number we saved earlier.` : `${value} is not in the seen list. It has not appeared before. Look at the saved numbers and try again.` }
   return present
-    ? { ...state, phase: 'complete', result: true, feedback: `${value} matches an earlier occurrence. Return true; the search can stop without adding it again.` }
-    : { ...state, phase: 'add', feedback: `${value} has not been seen. Now record it before moving to the next position.` }
+    ? { ...state, phase: 'complete', result: true, feedback: `${value} matches a number we saved earlier. We found a repeat (true), so we can stop.` }
+    : { ...state, phase: 'add', feedback: `${value} is new. Save it, then look at the next number.` }
 }
 export function recordCurrent(values: Value[], state: TraceState): TraceState {
   if (state.phase !== 'add' || state.index >= values.length) return state
   const seen = [...state.seen, values[state.index]], index = state.index + 1
   return index === values.length
     ? { ...state, index, seen, phase: 'complete', result: false, feedback: 'Every position was checked without finding a repeat. Return false.' }
-    : { ...state, index, seen, phase: 'predict', feedback: 'The seen list now contains earlier values. Predict the next membership check.' }
+    : { ...state, index, seen, phase: 'predict', feedback: 'That number is saved. Now check whether the next number is already there.' }
 }
 export function hasDuplicate(values: readonly Value[]): boolean {
   for (let i = 0; i < values.length; i++) for (let j = 0; j < i; j++) if (values[i] === values[j]) return true
@@ -66,11 +66,11 @@ export function orderExperiment(values: Value[], addFirst: boolean): OrderFrame[
   return frames
 }
 export const BLOCKS = {
-  init: { text: 'Create an empty Set named seen', scope: 'setup' },
-  loop: { text: 'For each value in the input', scope: 'loop' },
-  check: { text: 'If seen contains this value, return true', scope: 'inside loop' },
-  add: { text: 'Add this value to seen', scope: 'inside loop' },
-  finish: { text: 'After the loop finishes, return false', scope: 'after loop' },
+  init: { text: 'Start with an empty Set called seen', scope: 'setup' },
+  loop: { text: 'Repeat these steps for each input number', scope: 'loop' },
+  check: { text: 'If this number is already saved, answer true (a repeat)', scope: 'inside loop' },
+  add: { text: 'Save this number in the Set', scope: 'inside loop' },
+  finish: { text: 'After checking every number, answer false (no repeat)', scope: 'after loop' },
 } as const
 export type BlockId = keyof typeof BLOCKS
 export const STARTING_BLOCKS: BlockId[] = ['init', 'loop', 'add', 'check', 'finish']

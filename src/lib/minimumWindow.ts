@@ -35,7 +35,7 @@ export function minimumOracle({s,t}:WindowInput){
   return best
 }
 export const MINIMUM_CASES:WindowInput[]=[{s:'CABBA',t:'AAB'},{s:'ADOBECODEBANC',t:'ABC'},{s:'HELLO',t:'XYZ'},{s:'AA',t:'AA'},{s:'ABBA',t:'AB'},{s:'',t:'A'}]
-export const MINIMUM_BLOCKS=['Build required counts; empty current counts, left = 0, best = none','For each right position, add its character and update counts','While all required counts are satisfied','Record a shorter valid window, then remove left and advance it','Return the best window, or empty if none exists']
+export const MINIMUM_BLOCKS=['Count the required letters; start with an empty window','For each next letter, add it to our window and update its count','While we have enough of every required letter','Remember a shorter answer, then remove the first letter and update its count','Return the shortest answer found, or empty if none exists']
 export function checkMinimumPlan(order:number[]){const valid=order.length===5&&order.every((n,i)=>n===i);return MINIMUM_CASES.map(input=>({input,expected:minimumOracle(input),result:valid?minimumWindow(input,false,false).result:null}))}
 export function freshMinimumCase(id:number):WindowInput {
   const base=[{s:'CABAAC',t:'AAC'},{s:'BACAB',t:'AAB'},{s:'ABC',t:'AABC'},{s:'BAACBA',t:'AAB'},{s:'CCABAC',t:'AC'},{s:'AAAA',t:'AA'}][id%6]

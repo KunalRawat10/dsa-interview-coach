@@ -114,7 +114,7 @@ export default function Chat() {
       </div>
       <div className={`practice-workspace ${panel === 'workshop' ? `is-workshop${tutorOpen ? ' has-tutor' : ''}` : ''}`}>
       <div id="panel-workshop" role="tabpanel" aria-labelledby="tab-workshop" hidden={panel !== 'workshop'}>
-        <div className="journey-picker" aria-label="Hands-on learning journeys"><span>Hands-on journeys</span>{['contains-duplicate','container-with-most-water','longest-substring-no-repeat','minimum-window-substring'].map((slug,i)=><button key={slug} aria-pressed={activeProblem.slug===slug} onClick={()=>handleUserSelectProblem(PROBLEMS.find(p=>p.slug===slug)!)}>{['Membership & Maps','Two Pointers','Sliding Window','Minimum Window · Hard'][i]}</button>)}</div>
+        <div className="journey-picker" aria-label="Hands-on learning journeys"><span>Hands-on journeys</span>{['contains-duplicate','container-with-most-water','longest-substring-no-repeat','minimum-window-substring'].map((slug,i)=><button key={slug} aria-pressed={activeProblem.slug===slug} onClick={()=>handleUserSelectProblem(PROBLEMS.find(p=>p.slug===slug)!)}>{['Contains Duplicate','Two Pointers','Sliding Window','Minimum Window · Hard'][i]}</button>)}</div>
         {activeProblem.slug === 'contains-duplicate'
           ? <><DuplicateWorkshop ref={workshopRef} tutorOpen={tutorOpen || panel === 'conversation'} onAskTutor={openWorkshopTutor} onContextChange={setWorkshopContext} /><RequirementLab /></>
           : activeProblem.slug==='minimum-window-substring'

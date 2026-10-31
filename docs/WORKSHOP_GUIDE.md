@@ -4,11 +4,11 @@ Open Practice and select **Contains Duplicate**. Workshop is the default view. T
 
 ## Demo sequence
 
-1. **Follow the values:** use `[4,7,4]`. Predict **No** for the first 4, then record it. Predict **No** for 7, then record it. Predict **Yes** for the final 4. Checking and recording are separate actions.
-2. **Choose an approach:** select 1,000 distinct values and run the comparison. The list executes 499,500 equality comparisons; the Set makes 1,000 membership API calls. These measure different operations, not elapsed speed or internal hashing work. Compare the options and choose Set for repeated fast membership checks.
-3. **Break the rule:** predict what happens if adding comes before checking. Run the broken order to see a false positive on the first value. Switch to check-before-add and step through the repaired version.
-4. **Build your algorithm:** reorder the supplied blocks, run the six cases, inspect counterexamples, and repair the order. The JavaScript reference becomes available after the checks pass. This activity does not assess the learner's own code.
-5. **Try it independently:** answer the six questions for a fresh input. Further cases include usernames to test transfer beyond numbers. Corrections or opening a hint/tutor mark that attempt as assisted. A fresh case is required for a clean independent attempt.
+1. **Check each number:** use `[4,7,4]`. Predict **No** for the first 4, then record it. Predict **No** for 7, then record it. Predict **Yes** for the final 4. Checking and recording are separate actions.
+2. **Compare two methods:** hover over numbers 1–5 to preview each check, or click a number to keep it selected. There is no timed playback. For larger inputs, expand **Try more numbers or add a repeat**, select 1,000 different values, and choose **Count the checks**. The list executes 499,500 equality comparisons; the Set makes 1,000 membership API calls. These measure different operations, not elapsed speed or internal hashing work. Compare the options and choose Set for repeated fast membership checks.
+3. **Find the mistake:** predict what happens if adding comes before checking. Run the broken order to see a false positive on the first value. Switch to check-before-add and step through the repaired version.
+4. **Put the steps in order:** reorder the supplied blocks, run the six cases, inspect counterexamples, and repair the order. The JavaScript reference becomes available after the checks pass. This activity does not assess the learner's own code.
+5. **Try it yourself:** answer the six questions for a fresh input. Further cases include usernames to test transfer beyond numbers. Corrections or opening a hint/tutor mark that attempt as assisted. A fresh case is required for a clean independent attempt.
 
 ## Progress and help
 
@@ -50,10 +50,10 @@ Upgrade verification: 95 automated tests pass, including generated algorithm/ref
 
 Choose **Minimum Window · Hard** above the workshop. The problem is also available in the problem selector as number 21.
 
-1. **Count what you need:** start with the letter-card analogy. For target AAB, enter two As and one B. Presence alone is insufficient.
+1. **Count the letters you need:** start with the letter-card analogy. For target AAB, enter two As and one B. Presence alone is insufficient.
 2. **Move the window:** start with CABBA / AAB. Predict five expansions followed by two left shrinks. The shortest result is ABBA. The table shows required quantities beside current quantities before each move. Switch to ADOBECODEBANC / ABC for the longer BANC demonstration.
-3. **Repair the rule:** run the presence-only bug, which returns AB for a requirement of AAB. Choose per-character quantities, and explain that total boundary movement is linear. The repaired result is ABBA.
-4. **Build the plan:** move instruction 3 above instruction 4, then validate the scoped template and run six cases. The plan includes repeated targets, ties, impossible targets and an empty source. This validates a known plan, not arbitrary code.
-5. **Try a fresh problem:** type the exact earliest shortest window, or explicitly select **No valid window exists**. Explain count storage, the shrinking condition and O(n + m) scan time. Corrected or helped attempts remain labelled as assisted after reload; choose a new case for a fresh attempt.
+3. **Fix a mistake:** run the presence-only bug, which returns AB for a requirement of AAB. Choose per-character quantities, and explain that total boundary movement is linear. The repaired result is ABBA.
+4. **Put the steps in order:** move instruction 3 above instruction 4, then validate the scoped template and run six cases. The plan includes repeated targets, ties, impossible targets and an empty source. This validates a known plan, not arbitrary code.
+5. **Try it yourself:** type the exact earliest shortest window, or explicitly select **No valid window exists**. Explain count storage, the shrinking condition and O(n + m) scan time. Corrected or helped attempts remain labelled as assisted after reload; choose a new case for a fresh attempt.
 
 The lesson uses uppercase English letters. Count workspace is bounded by that fixed alphabet, while the returned substring requires space for its characters. Teaching snapshots consume additional display storage, so the linear scan is separately tested with snapshots disabled on a 100,000-character source. Automated reference checks cover 1,200 generated source/target pairs. The core journey needs no model or GPU. Save the offline lesson pack again to include this new build.

@@ -111,7 +111,7 @@
   .lab-stages { grid-template-columns: 1fr; }.lab-stages button { padding: 9px 15px; display: flex; align-items: center; gap: 12px; border-bottom-width: 1px; border-left: 3px solid transparent; }.lab-stages button span { display: inline; margin: 0; }.lab-stages button[aria-current="step"] { border-left-color: #315b49; }
   .lab-comparison,.lab-answer-grid { grid-template-columns: 1fr; }.lab-order-frames { grid-template-columns: 1fr; }.lab-code-blocks .is-nested { margin-left: 10px; }.lab-code-blocks strong { font-size: 10px; }.lab-move-buttons { flex-direction: column; }.lab-challenge-input { font-size: 17px; }
 }
-@media(prefers-reduced-motion:no-preference) { .lab-values .is-current { transition: background .2s; }.lab-assessment,.lab-test-results { animation: field-arrive .25s ease both; } }
+
 
 /* Quiet workbook styling: clear hierarchy, readable exercises, compact optional help. */
 .practice-intro { color:#737969; font-size:13px; line-height:1.7; margin-top:6px; max-width:580px; }
@@ -163,3 +163,29 @@
 .tutor-action-menu > div { display:flex; flex-wrap:wrap; gap:8px; }
 .tutor-action-menu button { padding:7px 10px; border:1px solid #cbd3bd; border-radius:4px; background:#f3f5eb; color:#315b49; }
 .tutor-action-menu button:disabled { opacity:.45; cursor:default; }
+.approach-demo { margin:22px 0; }
+.approach-demo h5 { font:21px/1.4 Georgia,serif; margin:12px 0; }
+.approach-demo > p { margin:12px 0; }
+.demo-number-row { display:flex; gap:9px; margin:24px 0; flex-wrap:wrap; }
+.demo-number-row > button { display:grid; place-items:center; min-width:47px; height:53px; border:1px solid #d4ccba; border-radius:5px; font:27px Georgia,serif; background:#faf7ee; }
+.demo-number-row .is-done { background:#e9eedf; color:#607454; }
+.demo-number-row .is-active { background:#f3e5d0; border:2px solid #a04b2b; color:#763b23; }
+.demo-pairs { min-height:76px; font-size:12px; line-height:1.9; margin:12px 0; }
+.demo-pairs > span { display:block; border-bottom:1px solid #d6d8c8; padding:3px 0; }
+.approach-demo .lab-comparison article { padding:19px; display:flex; flex-direction:column; }
+.approach-demo .demo-pairs { flex:1; }
+.approach-demo .lab-comparison article > p { line-height:1.8; letter-spacing:0; }
+.pointer-picture { margin:20px 0; padding:16px; background:#f3f5ec; border:1px solid #d0d8c2; border-radius:7px; }
+.pointer-picture figcaption { font-size:13px; color:#315b49; }
+.pointer-picture svg { display:block; width:100%; height:auto; margin:8px 0; }
+.pointer-picture > p { font-size:12px; }
+.pointer-values { display:none; }
+.approach-demo .demo-number-row > button { padding:0; font:27px Georgia,serif; min-width:47px; height:53px; cursor:pointer; }
+@media(hover:hover) and (prefers-reduced-motion:no-preference) {
+ .duplicate-lab .demo-number-row > button, .duplicate-lab .lab-comparison article, .duplicate-lab .lab-values > div, .duplicate-lab .lab-stages button, .duplicate-lab .lab-code-blocks li { transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease; }
+ .duplicate-lab .demo-number-row > button:hover, .duplicate-lab .lab-values > div:hover { transform:translateY(-4px); }
+ .duplicate-lab .lab-comparison article:hover, .duplicate-lab .lab-code-blocks li:hover { transform:translateY(-3px); box-shadow:0 5px 12px #315b4910; }
+ .duplicate-lab .lab-stages button:hover { transform:translateY(-2px); }
+}
+.lab-values .is-incoming { border:2px dashed #a04b2b; background:#fcf0dc; }
+@media(max-width:600px) { .demo-number-row > button { min-width:40px; height:46px; } .approach-demo .lab-comparison article { padding:15px; } }

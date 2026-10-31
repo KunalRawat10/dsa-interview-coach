@@ -33,7 +33,7 @@ Say: “A Set answers whether a value exists. Counting needs additional informat
 
 ### 1:25–2:10 — Make the hard problem understandable
 
-Choose **Minimum Window · Hard**, then **Count what you need**.
+Choose **Minimum Window · Hard**, then **Count the letters you need**.
 
 Say: “We need the shortest continuous section containing all required letters. Here AAB needs two As and one B; order does not matter, but quantities do.”
 
@@ -43,7 +43,7 @@ Enter A = `1`, B = `1`, click **Check the shopping list** to show feedback. Chan
 
 Choose **Move the window**, teaching example **Start small: CABBA / AAB**. Restart the trace if necessary.
 
-Click **Expand right** five times, pausing after each to show the count table. Then click **Shrink from left** twice.
+Click **Add the next letter** five times, pausing after each to show the count table. Then click **Remove the first letter** twice.
 
 Narrate:
 
@@ -56,19 +56,19 @@ Optional cutaway: switch to the full ADOBECODEBANC / ABC example. At every step,
 
 ### 3:10–3:55 — Investigate a real mistake
 
-Choose **Repair the rule**, click **Run the presence-only bug**. Show suspect result AB versus correct result ABBA. Choose **Each current count meets or exceeds its required count**. For the scan choose **Each boundary advances at most n times; build target counts in m steps**. Run the repair.
+Choose **Fix a mistake**, click **Run the presence-only bug**. Show suspect result AB versus correct result ABBA. Choose **We have at least as many of each letter as we need**. For the scan choose **Each boundary advances at most n times; build target counts in m steps**. Run the repair.
 
 Say: “The buggy rule treats AAB as just A and B. The counterexample makes its failure visible. The repaired scan tracks quantities. Each boundary advances at most n times, so the nested shrinking loop does not automatically make it quadratic.”
 
 ### 3:55–4:40 — Build and validate a plan
 
-Choose **Build the plan**. If using a fresh draft, run it once to show the ordering feedback. Click **Move instruction 3 up** once, placing the validity loop before recording/shrinking. Click **Validate plan and run six cases**. Show repeated requirements, BANC, an impossible target, a tie and empty source.
+Choose **Put the steps in order**. If using a fresh draft, run it once to show the ordering feedback. Click **Move instruction 3 up** once, placing the validity loop before recording/shrinking. Click **Try my steps on 6 examples**. Show repeated requirements, BANC, an impossible target, a tie and empty source.
 
 Say: “These are known plan cards. The application validates their order and executes the accepted algorithm against reference cases. This checks conceptual planning; it does not claim to have executed arbitrary student code.”
 
 ### 4:40–5:35 — Apply independently
 
-Choose **Try a fresh problem**. With a clean demo record, case 1 is `s = CABAAC`, `t = AAC`. Enter `AAC`, choose **Required and current character counts**, **While all required counts are satisfied**, and **O(n + m)**. Submit.
+Choose **Try it yourself**. With a clean demo record, case 1 is `s = CABAAC`, `t = AAC`. Enter `AAC`, choose **Required and current character counts**, **While we still have enough of every required letter**, and **O(n + m)**. Submit.
 
 Say: “The result is checked against an exhaustive reference on this small input. An unassisted pass is distinguished from one completed with hints or corrections. It is evidence for this activity, not proof of general mastery.”
 
